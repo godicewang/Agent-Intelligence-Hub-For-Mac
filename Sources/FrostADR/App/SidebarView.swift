@@ -7,7 +7,14 @@ struct SidebarView: View {
     VStack(spacing: 0) {
       brandHeader
 
-      ScrollView(.vertical) {
+      VStack(alignment: .leading, spacing: 10) {
+        Text("MODULE")
+          .font(.system(size: 10, weight: .bold))
+          .foregroundStyle(FrostTheme.sidebarMutedText)
+          .tracking(1.1)
+          .padding(.horizontal, 14)
+          .padding(.top, 14)
+
         VStack(spacing: 6) {
           ForEach(FrostRoute.allCases) { route in
             SidebarItem(
@@ -19,10 +26,10 @@ struct SidebarView: View {
           }
         }
         .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 12)
       }
+      .frame(maxWidth: .infinity, alignment: .topLeading)
 
+      Spacer(minLength: 24)
       endpointStatus
     }
     .background(FrostTheme.sidebarBackground)
@@ -162,7 +169,7 @@ private struct SidebarItem: View {
 
 struct SidebarView_Previews: PreviewProvider {
   static var previews: some View {
-    SidebarView(selection: .constant(.dashboard))
+    SidebarView(selection: .constant(.agentScan))
       .frame(width: 256, height: 760)
   }
 }

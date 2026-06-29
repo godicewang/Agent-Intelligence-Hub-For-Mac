@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct RootView: View {
-  @State private var selectedRoute: FrostRoute = .dashboard
+  @State private var selectedRoute: FrostRoute = .agentScan
 
   var body: some View {
     HStack(spacing: 0) {
@@ -24,7 +24,5 @@ struct RootView: View {
 struct RootView_Previews: PreviewProvider {
   static var previews: some View {
     RootView()
-      .environmentObject(AppViewModel())
-      .environmentObject(SettingsViewModel())
   }
 }
