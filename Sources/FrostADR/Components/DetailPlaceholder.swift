@@ -13,7 +13,7 @@ struct DetailPlaceholder: View {
         systemImage: systemImage,
         compact: false
       )
-      .frame(minHeight: 220)
+      .frame(minHeight: 260)
     }
   }
 }

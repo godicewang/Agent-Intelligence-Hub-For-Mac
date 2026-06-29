@@ -10,9 +10,9 @@ struct FrostADRApp: App {
       RootView()
         .environmentObject(appViewModel)
         .environmentObject(settingsViewModel)
-        .frame(minWidth: 1180, minHeight: 760)
+        .frame(minWidth: 1240, minHeight: 780)
     }
-    .windowStyle(.hiddenTitleBar)
-    .windowToolbarStyle(.unifiedCompact)
+    .defaultSize(width: 1360, height: 860)
+    .windowToolbarStyle(.unified)
   }
 }

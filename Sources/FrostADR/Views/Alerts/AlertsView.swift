@@ -4,7 +4,7 @@ struct AlertsView: View {
   @State private var selectedSeverity: AlertSeverityFilter = .all
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
+    FrostPage {
       PageHeader(
         title: "Alerts",
         subtitle: "运行时检测、策略命中与阻断审计的告警入口。",
@@ -21,7 +21,7 @@ struct AlertsView: View {
         .frame(maxWidth: 520)
       }
 
-      HSplitView {
+      FrostDetailLayout {
         VStack(alignment: .leading, spacing: 14) {
           FrostCard("告警列表", subtitle: "Runtime alerts") {
             PlaceholderTable(
@@ -41,18 +41,14 @@ struct AlertsView: View {
             .frame(minHeight: 170)
           }
         }
-        .frame(minWidth: 640)
-
+      } detail: {
         DetailPlaceholder(
           title: "告警详情",
           message: "选择告警后将在此展示检测阶段、证据与处置记录。",
           systemImage: "exclamationmark.triangle"
         )
-        .frame(minWidth: 300, idealWidth: 340)
       }
     }
-    .padding(24)
-    .background(FrostTheme.pageBackground)
   }
 }
 

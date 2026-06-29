@@ -2,14 +2,14 @@ import SwiftUI
 
 struct PolicyView: View {
   var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
+    FrostPage {
       PageHeader(
         title: "Rules / Policy",
         subtitle: "本地策略、规则包与检测动作的管理入口。",
         path: "FrostADR / Rules / Policy"
       )
 
-      HStack(alignment: .top, spacing: 18) {
+      LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 16)], spacing: 16) {
         FrostCard("本地保护模式", subtitle: "Local protection mode") {
           EmptyStateView(
             title: "等待策略引擎接入",
@@ -29,7 +29,7 @@ struct PolicyView: View {
         }
       }
 
-      HSplitView {
+      FrostDetailLayout {
         FrostCard("规则列表", subtitle: "Policy rules") {
           PlaceholderTable(
             columns: ["规则", "阶段", "动作", "状态", "规则包"],
@@ -38,18 +38,14 @@ struct PolicyView: View {
             minHeight: 420
           )
         }
-        .frame(minWidth: 640)
-
+      } detail: {
         DetailPlaceholder(
           title: "规则详情",
           message: "选择规则后将在此展示匹配条件、动作和版本信息。",
           systemImage: "checklist.checked"
         )
-        .frame(minWidth: 300, idealWidth: 340)
       }
     }
-    .padding(24)
-    .background(FrostTheme.pageBackground)
   }
 }
 

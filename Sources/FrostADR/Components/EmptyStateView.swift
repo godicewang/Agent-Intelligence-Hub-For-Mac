@@ -7,12 +7,22 @@ struct EmptyStateView: View {
   var compact: Bool = false
 
   var body: some View {
-    VStack(spacing: compact ? 8 : 12) {
-      Image(systemName: systemImage)
-        .font(.system(size: compact ? 20 : 30, weight: .semibold))
-        .foregroundStyle(FrostTheme.accent.opacity(0.78))
+    VStack(spacing: compact ? 8 : 10) {
+      ZStack {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .fill(FrostTheme.accent.opacity(0.10))
+          .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+              .stroke(FrostTheme.accent.opacity(0.22), lineWidth: 1)
+          )
 
-      VStack(spacing: 4) {
+        Image(systemName: systemImage)
+          .font(.system(size: compact ? 17 : 22, weight: .semibold))
+          .foregroundStyle(FrostTheme.accent)
+      }
+      .frame(width: compact ? 34 : 44, height: compact ? 34 : 44)
+
+      VStack(spacing: 3) {
         Text(title)
           .font(.system(size: compact ? 12 : 14, weight: .semibold))
           .multilineTextAlignment(.center)

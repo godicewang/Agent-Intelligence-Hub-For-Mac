@@ -4,7 +4,7 @@ struct ApprovalView: View {
   @State private var selectedTab: ApprovalTab = .pending
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
+    FrostPage {
       PageHeader(
         title: "Approval",
         subtitle: "高风险 Agent 行为的本地审批入口。",
@@ -17,9 +17,9 @@ struct ApprovalView: View {
         }
       }
       .pickerStyle(.segmented)
-      .frame(width: 280)
+      .frame(width: 300)
 
-      HSplitView {
+      FrostDetailLayout {
         FrostCard(selectedTab.title, subtitle: selectedTab.subtitle) {
           PlaceholderTable(
             columns: selectedTab.columns,
@@ -28,18 +28,14 @@ struct ApprovalView: View {
             minHeight: 460
           )
         }
-        .frame(minWidth: 640)
-
+      } detail: {
         DetailPlaceholder(
           title: "审批详情",
           message: "选择审批请求后将在此展示请求来源、风险说明和审计记录。",
           systemImage: "person.badge.shield.checkmark"
         )
-        .frame(minWidth: 300, idealWidth: 340)
       }
     }
-    .padding(24)
-    .background(FrostTheme.pageBackground)
   }
 }
 

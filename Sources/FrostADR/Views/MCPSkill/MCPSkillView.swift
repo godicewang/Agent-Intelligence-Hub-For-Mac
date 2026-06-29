@@ -4,7 +4,7 @@ struct MCPSkillView: View {
   @State private var selectedTab: MCPSkillTab = .mcpServers
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
+    FrostPage {
       PageHeader(
         title: "MCP / Skill",
         subtitle: "MCP Server 与 Skill 资产的静态信任入口。",
@@ -17,7 +17,7 @@ struct MCPSkillView: View {
         }
       }
       .pickerStyle(.segmented)
-      .frame(width: 320)
+      .frame(width: 360)
 
       FrostCard(selectedTab.title, subtitle: selectedTab.subtitle) {
         PlaceholderTable(
@@ -28,8 +28,6 @@ struct MCPSkillView: View {
         )
       }
     }
-    .padding(24)
-    .background(FrostTheme.pageBackground)
   }
 }
 

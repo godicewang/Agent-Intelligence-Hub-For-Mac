@@ -16,25 +16,43 @@ struct FrostCard<Content: View>: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 14) {
+    VStack(alignment: .leading, spacing: 0) {
       if title != nil || subtitle != nil {
-        VStack(alignment: .leading, spacing: 4) {
-          if let title {
-            Text(title)
-              .font(.system(size: 14, weight: .semibold))
+        HStack(alignment: .top, spacing: 10) {
+          Rectangle()
+            .fill(FrostTheme.accent.opacity(0.82))
+            .frame(width: 3, height: 28)
+            .clipShape(Capsule(style: .continuous))
+
+          VStack(alignment: .leading, spacing: 3) {
+            if let title {
+              Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .lineLimit(1)
+            }
+
+            if let subtitle {
+              Text(subtitle)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(FrostTheme.mutedText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            }
           }
 
-          if let subtitle {
-            Text(subtitle)
-              .font(.caption)
-              .foregroundStyle(FrostTheme.mutedText)
-          }
+          Spacer(minLength: 0)
         }
+        .padding(.horizontal, 15)
+        .padding(.top, 13)
+        .padding(.bottom, 11)
+        .background(FrostTheme.headerBackground)
+
+        Divider()
       }
 
       content
+        .padding(15)
     }
-    .padding(16)
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .background(
       RoundedRectangle(cornerRadius: FrostTheme.radius, style: .continuous)
@@ -44,6 +62,8 @@ struct FrostCard<Content: View>: View {
       RoundedRectangle(cornerRadius: FrostTheme.radius, style: .continuous)
         .stroke(FrostTheme.border, lineWidth: 1)
     )
+    .clipShape(RoundedRectangle(cornerRadius: FrostTheme.radius, style: .continuous))
+    .shadow(color: FrostTheme.shadow, radius: 10, x: 0, y: 3)
   }
 }
 

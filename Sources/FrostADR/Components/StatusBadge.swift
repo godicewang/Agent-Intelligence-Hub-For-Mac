@@ -10,7 +10,7 @@ enum StatusBadgeTone {
   var foreground: Color {
     switch self {
     case .neutral:
-      .secondary
+      Color.secondary
     case .info:
       FrostTheme.accent
     case .healthy:
@@ -33,9 +33,9 @@ struct StatusBadge: View {
 
   var body: some View {
     Text(label)
-      .font(.system(size: 11, weight: .semibold))
+      .font(.system(size: 10.5, weight: .bold))
       .lineLimit(1)
-      .padding(.horizontal, 8)
+      .padding(.horizontal, 7)
       .padding(.vertical, 4)
       .foregroundStyle(tone.foreground)
       .background(

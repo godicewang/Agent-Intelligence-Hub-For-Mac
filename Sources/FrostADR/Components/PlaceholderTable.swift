@@ -14,9 +14,11 @@ struct PlaceholderTable: View {
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(FrostTheme.mutedText)
             .textCase(.uppercase)
+            .lineLimit(1)
+            .truncationMode(.tail)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.vertical, 11)
         }
       }
       .background(FrostTheme.tableHeaderBackground)
@@ -30,6 +32,7 @@ struct PlaceholderTable: View {
         compact: false
       )
       .frame(maxWidth: .infinity, minHeight: minHeight)
+      .background(FrostTheme.tableRowBackground)
     }
     .background(
       RoundedRectangle(cornerRadius: FrostTheme.radius, style: .continuous)

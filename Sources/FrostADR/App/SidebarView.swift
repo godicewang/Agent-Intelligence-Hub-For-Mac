@@ -7,7 +7,7 @@ struct SidebarView: View {
     VStack(spacing: 0) {
       brandHeader
 
-      ScrollView {
+      ScrollView(.vertical) {
         VStack(spacing: 6) {
           ForEach(FrostRoute.allCases) { route in
             SidebarItem(
@@ -19,7 +19,8 @@ struct SidebarView: View {
           }
         }
         .padding(.horizontal, 12)
-        .padding(.top, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
       }
 
       endpointStatus
@@ -28,45 +29,60 @@ struct SidebarView: View {
   }
 
   private var brandHeader: some View {
-    VStack(alignment: .leading, spacing: 14) {
+    VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 10) {
         ZStack {
           RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(FrostTheme.accent.opacity(0.18))
+            .fill(FrostTheme.accent.opacity(0.20))
             .overlay(
               RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(FrostTheme.accent.opacity(0.34), lineWidth: 1)
+                .stroke(FrostTheme.accent.opacity(0.45), lineWidth: 1)
             )
 
           Image(systemName: "shield.lefthalf.filled")
-            .font(.system(size: 18, weight: .semibold))
+            .font(.system(size: 17, weight: .bold))
             .foregroundStyle(FrostTheme.accent)
         }
-        .frame(width: 34, height: 34)
+        .frame(width: 36, height: 36)
 
         VStack(alignment: .leading, spacing: 2) {
           Text("FrostADR")
-            .font(.system(size: 18, weight: .semibold))
+            .font(.system(size: 18, weight: .bold))
             .foregroundStyle(.white)
 
-          Text("Agent-EDR")
-            .font(.caption)
+          Text("Endpoint Agent-EDR")
+            .font(.system(size: 11, weight: .medium))
             .foregroundStyle(FrostTheme.sidebarMutedText)
         }
+      }
+
+      HStack(spacing: 6) {
+        Capsule()
+          .fill(FrostTheme.accent)
+          .frame(width: 6, height: 6)
+
+        Text("macOS Apple Silicon")
+          .font(.system(size: 11, weight: .medium))
+          .foregroundStyle(FrostTheme.sidebarMutedText)
+
+        Spacer()
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.horizontal, 18)
-    .padding(.top, 20)
+    .padding(.top, 18)
     .padding(.bottom, 16)
+    .background(
+      Rectangle()
+        .fill(FrostTheme.sidebarSurface.opacity(0.48))
+    )
   }
 
   private var endpointStatus: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: 12) {
       HStack {
-        Text("Endpoint 状态")
-          .font(.caption)
-          .fontWeight(.semibold)
+        Label("Endpoint", systemImage: "desktopcomputer")
+          .font(.system(size: 12, weight: .semibold))
           .foregroundStyle(FrostTheme.sidebarMutedText)
 
         Spacer()
@@ -75,16 +91,16 @@ struct SidebarView: View {
       }
 
       Text("等待端上数据接入")
-        .font(.caption)
+        .font(.system(size: 12))
         .foregroundStyle(FrostTheme.sidebarMutedText)
     }
-    .padding(12)
+    .padding(14)
     .background(
       RoundedRectangle(cornerRadius: 8, style: .continuous)
-        .fill(Color.white.opacity(0.055))
+        .fill(FrostTheme.sidebarSurface)
         .overlay(
           RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            .stroke(Color.white.opacity(0.10), lineWidth: 1)
         )
     )
     .padding(12)
@@ -95,33 +111,52 @@ private struct SidebarItem: View {
   let route: FrostRoute
   let isSelected: Bool
   let action: () -> Void
+  @State private var isHovered = false
 
   var body: some View {
     Button(action: action) {
       HStack(spacing: 10) {
         Image(systemName: route.systemImage)
-          .font(.system(size: 15, weight: .semibold))
-          .frame(width: 20)
-          .foregroundStyle(isSelected ? .white : FrostTheme.sidebarMutedText)
+          .font(.system(size: 15, weight: .bold))
+          .frame(width: 22)
+          .foregroundStyle(isSelected ? FrostTheme.accent : FrostTheme.sidebarMutedText)
 
         Text(route.title)
           .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
           .foregroundStyle(isSelected ? .white : FrostTheme.sidebarText)
+          .lineLimit(1)
+          .truncationMode(.tail)
 
         Spacer()
       }
-      .padding(.horizontal, 10)
-      .frame(height: 36)
+      .padding(.horizontal, 12)
+      .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+      .contentShape(Rectangle())
       .background(
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .fill(isSelected ? FrostTheme.sidebarSelection : Color.clear)
+          .fill(background)
       )
       .overlay(
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .stroke(isSelected ? FrostTheme.accent.opacity(0.28) : Color.clear, lineWidth: 1)
+          .stroke(
+            isSelected
+              ? FrostTheme.accent.opacity(0.44) : Color.white.opacity(isHovered ? 0.10 : 0),
+            lineWidth: 1)
       )
     }
     .buttonStyle(.plain)
+    .help(route.title)
+    .onHover { isHovered = $0 }
+  }
+
+  private var background: Color {
+    if isSelected {
+      FrostTheme.sidebarSelection
+    } else if isHovered {
+      FrostTheme.sidebarHover
+    } else {
+      Color.clear
+    }
   }
 }
 

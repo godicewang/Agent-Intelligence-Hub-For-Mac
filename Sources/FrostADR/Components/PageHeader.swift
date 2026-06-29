@@ -6,14 +6,18 @@ struct PageHeader: View {
   let path: String
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline) {
+    HStack(alignment: .center, spacing: 16) {
       VStack(alignment: .leading, spacing: 6) {
-        Text(path)
-          .font(.caption)
-          .foregroundStyle(FrostTheme.mutedText)
+        HStack(spacing: 8) {
+          Text(path)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(FrostTheme.mutedText)
+
+          StatusBadge(label: "UI Shell", tone: .info)
+        }
 
         Text(title)
-          .font(.system(size: 26, weight: .semibold))
+          .font(.system(size: 25, weight: .bold))
 
         Text(subtitle)
           .font(.system(size: 13))
@@ -22,8 +26,19 @@ struct PageHeader: View {
       }
 
       Spacer()
+
+      VStack(alignment: .trailing, spacing: 4) {
+        Text("FrostADR")
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(FrostTheme.mutedText)
+
+        Text("等待端上数据接入")
+          .font(.system(size: 12, weight: .medium))
+          .foregroundStyle(FrostTheme.accent)
+      }
     }
-    .padding(.bottom, 4)
+    .padding(.horizontal, 2)
+    .padding(.bottom, 2)
   }
 }
 

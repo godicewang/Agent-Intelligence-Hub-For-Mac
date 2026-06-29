@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SessionGraphView: View {
   var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
+    FrostPage {
       PageHeader(
         title: "Session Graph",
         subtitle: "Observable decision and execution chain reconstruction.",
@@ -22,7 +22,7 @@ struct SessionGraphView: View {
         .frame(minHeight: 36)
       }
 
-      HSplitView {
+      FrostDetailLayout {
         VStack(alignment: .leading, spacing: 14) {
           FrostCard("决策链图", subtitle: "Observable execution chain") {
             ZStack {
@@ -51,18 +51,14 @@ struct SessionGraphView: View {
             .frame(minHeight: 150)
           }
         }
-        .frame(minWidth: 640)
-
+      } detail: {
         DetailPlaceholder(
           title: "节点详情",
           message: "选择图节点后将在此展示事件类型、时间、路径和关联证据。",
           systemImage: "smallcircle.filled.circle"
         )
-        .frame(minWidth: 300, idealWidth: 340)
       }
     }
-    .padding(24)
-    .background(FrostTheme.pageBackground)
   }
 }
 

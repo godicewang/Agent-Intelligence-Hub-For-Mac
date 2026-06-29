@@ -4,15 +4,20 @@ struct RootView: View {
   @State private var selectedRoute: FrostRoute = .dashboard
 
   var body: some View {
-    NavigationSplitView {
+    HStack(spacing: 0) {
       SidebarView(selection: $selectedRoute)
-        .navigationSplitViewColumnWidth(min: 236, ideal: 256, max: 292)
-    } detail: {
+        .frame(width: 272)
+
+      Rectangle()
+        .fill(FrostTheme.sidebarDivider)
+        .frame(width: 1)
+
       selectedRoute.destination
-        .id(selectedRoute)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(FrostTheme.pageBackground)
     }
-    .navigationSplitViewStyle(.balanced)
     .tint(FrostTheme.accent)
+    .background(FrostTheme.pageBackground)
   }
 }
 

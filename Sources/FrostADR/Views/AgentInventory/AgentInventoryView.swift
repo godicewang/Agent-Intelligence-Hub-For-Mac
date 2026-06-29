@@ -4,7 +4,7 @@ struct AgentInventoryView: View {
   @State private var searchText = ""
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
+    FrostPage {
       PageHeader(
         title: "Agent Inventory",
         subtitle: "发现并审计本机 AI Agent、上下文文件与相关资产。",
@@ -15,7 +15,7 @@ struct AgentInventoryView: View {
         HStack(spacing: 12) {
           TextField("搜索 Agent、路径或工作区", text: $searchText)
             .textFieldStyle(.roundedBorder)
-            .frame(maxWidth: 360)
+            .frame(width: 360)
 
           Menu("筛选器") {
             Text("等待端上数据接入")
@@ -26,7 +26,7 @@ struct AgentInventoryView: View {
         }
       }
 
-      HSplitView {
+      FrostDetailLayout {
         FrostCard("Agent 列表", subtitle: "Discovered assets") {
           PlaceholderTable(
             columns: ["Agent", "类型", "工作区", "风险", "管理状态", "最后观察"],
@@ -35,18 +35,14 @@ struct AgentInventoryView: View {
             minHeight: 420
           )
         }
-        .frame(minWidth: 620)
-
+      } detail: {
         DetailPlaceholder(
           title: "资产详情",
           message: "选择 Agent 资产后将在此展示路径、指纹、风险和管理状态。",
           systemImage: "laptopcomputer.and.magnifyingglass"
         )
-        .frame(minWidth: 300, idealWidth: 340)
       }
     }
-    .padding(24)
-    .background(FrostTheme.pageBackground)
   }
 }
 

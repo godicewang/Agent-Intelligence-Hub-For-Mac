@@ -4,7 +4,7 @@ struct StaticScanView: View {
   @State private var selectedScope: StaticScanScope = .all
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
+    FrostPage {
       PageHeader(
         title: "Static Scan",
         subtitle: "MCP、Skill、Memory 与上下文文件的静态风险扫描入口。",
@@ -19,10 +19,10 @@ struct StaticScanView: View {
             .foregroundStyle(FrostTheme.mutedText)
           Spacer()
         }
-        .frame(minHeight: 36)
+        .frame(minHeight: 34)
       }
 
-      HSplitView {
+      FrostDetailLayout {
         VStack(alignment: .leading, spacing: 14) {
           FrostCard("扫描类型", subtitle: "Scope filter") {
             Picker("", selection: $selectedScope) {
@@ -42,18 +42,14 @@ struct StaticScanView: View {
             )
           }
         }
-        .frame(minWidth: 640)
-
+      } detail: {
         DetailPlaceholder(
           title: "Finding 详情",
           message: "选择扫描发现后将在此展示上下文、规则和处置建议。",
           systemImage: "doc.text.magnifyingglass"
         )
-        .frame(minWidth: 300, idealWidth: 340)
       }
     }
-    .padding(24)
-    .background(FrostTheme.pageBackground)
   }
 }
 

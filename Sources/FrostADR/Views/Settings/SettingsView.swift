@@ -4,14 +4,14 @@ struct SettingsView: View {
   @EnvironmentObject private var settings: SettingsViewModel
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 18) {
-        PageHeader(
-          title: "Settings",
-          subtitle: "端上保护、隐私、本地代理与扫描入口的本地 UI 设置。",
-          path: "FrostADR / Settings"
-        )
+    FrostPage {
+      PageHeader(
+        title: "Settings",
+        subtitle: "端上保护、隐私、本地代理与扫描入口的本地 UI 设置。",
+        path: "FrostADR / Settings"
+      )
 
+      LazyVGrid(columns: [GridItem(.adaptive(minimum: 360), spacing: 16)], spacing: 16) {
         controlPlaneSection
         protectionSection
         privacySection
@@ -21,9 +21,7 @@ struct SettingsView: View {
         systemSensorSection
         aboutSection
       }
-      .padding(24)
     }
-    .background(FrostTheme.pageBackground)
   }
 
   private var controlPlaneSection: some View {
