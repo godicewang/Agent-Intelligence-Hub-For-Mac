@@ -38,6 +38,7 @@ final class KnownAgentScanner {
 
       for path in fingerprint.installPaths {
         let url = expanded(path)
+        guard shouldAccess(url) else { continue }
         if DiscoveryUtilities.fileExists(url) || DiscoveryUtilities.directoryExists(url) {
           installPaths.append(url.path)
           confidence += fingerprint.confidenceWeights.installPath
@@ -51,6 +52,7 @@ final class KnownAgentScanner {
 
       for path in fingerprint.configPaths {
         let url = expanded(path)
+        guard shouldAccess(url) else { continue }
         if DiscoveryUtilities.fileExists(url) {
           configPaths.append(url.path)
           confidence += fingerprint.confidenceWeights.configPath
@@ -63,6 +65,7 @@ final class KnownAgentScanner {
 
       for path in fingerprint.mcpConfigPaths {
         let url = expanded(path)
+        guard shouldAccess(url) else { continue }
         if DiscoveryUtilities.fileExists(url) {
           mcpConfigPaths.append(url.path)
           confidence += fingerprint.confidenceWeights.mcpConfig
@@ -75,7 +78,8 @@ final class KnownAgentScanner {
       }
 
       for path in fingerprint.skillPaths {
-        for url in expandedCandidates(path) where DiscoveryUtilities.directoryExists(url) {
+        for url in expandedCandidates(path)
+        where shouldAccess(url) && DiscoveryUtilities.directoryExists(url) {
           skillPaths.append(url.path)
           confidence += fingerprint.confidenceWeights.skill
           evidence.append(
@@ -87,6 +91,7 @@ final class KnownAgentScanner {
 
       for path in fingerprint.cachePaths {
         let url = expanded(path)
+        guard shouldAccess(url) else { continue }
         if DiscoveryUtilities.fileExists(url) || DiscoveryUtilities.directoryExists(url) {
           cachePaths.append(url.path)
           confidence += fingerprint.confidenceWeights.cache
@@ -99,6 +104,7 @@ final class KnownAgentScanner {
 
       for path in fingerprint.memoryPaths {
         let url = expanded(path)
+        guard shouldAccess(url) else { continue }
         if DiscoveryUtilities.fileExists(url) || DiscoveryUtilities.directoryExists(url) {
           memoryPaths.append(url.path)
           confidence += fingerprint.confidenceWeights.memory
@@ -203,6 +209,10 @@ final class KnownAgentScanner {
     return config.scanRoots.map { $0.appendingPathComponent(path) }
   }
 
+  private func shouldAccess(_ url: URL) -> Bool {
+    config.allowsAutomaticAccess(to: url)
+  }
+
   private func evidenceRecord(
     _ type: DiscoveryEvidenceType,
     fingerprint: AgentFingerprint,
@@ -232,22 +242,53 @@ final class KnownAgentScanner {
 
   private func collectMemoryFiles(paths: [String]) -> [URL] {
     var files: [URL] = []
+    var budget = MemoryCollectionBudget()
     for path in paths {
+      guard files.count < config.limits.maxCollectedMemoryFiles else { break }
       let url = URL(fileURLWithPath: path)
+      guard shouldAccess(url) else { continue }
       if DiscoveryUtilities.fileExists(url) {
         files.append(url)
       } else if DiscoveryUtilities.directoryExists(url) {
-        let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil)
-        while let item = enumerator?.nextObject() as? URL {
-          let name = item.lastPathComponent.lowercased()
-          if name.hasSuffix(".jsonl") || name.hasSuffix(".sqlite") || name.hasSuffix(".db")
-            || name.contains("memory") || name.contains("conversation")
-          {
-            files.append(item)
-          }
-        }
+        collectMemoryFiles(in: url, depth: 0, files: &files, budget: &budget)
       }
     }
     return files
   }
+
+  private func collectMemoryFiles(
+    in directory: URL, depth: Int, files: inout [URL], budget: inout MemoryCollectionBudget
+  ) {
+    guard depth <= config.limits.maxDepth,
+      budget.visitedDirectories < config.limits.maxScannedDirectories,
+      files.count < config.limits.maxCollectedMemoryFiles
+    else {
+      return
+    }
+    budget.visitedDirectories += 1
+
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+    for name in names.prefix(config.limits.maxDirectoryEntries) {
+      guard files.count < config.limits.maxCollectedMemoryFiles else { break }
+      if KeywordFileScanner.skipDirectoryNames.contains(name) { continue }
+      let url = directory.appendingPathComponent(name)
+      var isDirectory: ObjCBool = false
+      FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+      if isDirectory.boolValue {
+        collectMemoryFiles(in: url, depth: depth + 1, files: &files, budget: &budget)
+      } else if isMemoryLikeFile(url) {
+        files.append(url)
+      }
+    }
+  }
+
+  private func isMemoryLikeFile(_ url: URL) -> Bool {
+    let name = url.lastPathComponent.lowercased()
+    return name.hasSuffix(".jsonl") || name.hasSuffix(".sqlite") || name.hasSuffix(".db")
+      || name.contains("memory") || name.contains("conversation") || name.contains("session")
+  }
+}
+
+private struct MemoryCollectionBudget {
+  var visitedDirectories = 0
 }

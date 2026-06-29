@@ -38,7 +38,7 @@ struct AgentScanView: View {
         .frame(width: 48, height: 48)
 
         VStack(alignment: .leading, spacing: 5) {
-          Text(viewModel.isScanning ? "正在扫描本机 Agent 资产" : "Agent 发现引擎已连接本机数据")
+          Text(viewModel.isScanning ? "正在轻量扫描本机 Agent 资产" : "Agent 发现引擎已连接本机数据")
             .font(.system(size: 16, weight: .bold))
 
           Text(statusLine)
@@ -89,7 +89,7 @@ struct AgentScanView: View {
       return
         "最近扫描：\(lastScannedAt.formatted(date: .abbreviated, time: .standard))。所有结果来自本机扫描与本地持久化。"
     }
-    return "等待首次扫描完成。不会执行 MCP server、Skill 脚本或上传本机数据。"
+    return "等待首次扫描完成。默认只扫描无需额外授权的 Agent 配置和已授权工作区，不读取受保护应用数据。"
   }
 
   private var summaryGrid: some View {
@@ -248,8 +248,9 @@ struct AgentScanView: View {
         }
         if viewModel.snapshot.permissionStates.isEmpty {
           EmptyStateView(
-            title: "暂无权限状态",
-            message: "首次扫描完成后展示 Full Disk Access、Endpoint Security 和 Network Extension 状态。",
+            title: "暂无额外权限请求",
+            message:
+              "默认轻量发现不会主动请求 Full Disk Access、App Data、Endpoint Security 或 Network Extension 权限。",
             systemImage: "lock.shield", compact: true)
         }
       }

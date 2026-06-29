@@ -10,6 +10,25 @@ enum DiscoverySelfTest {
         && registry.fingerprints.contains { $0.normalizedName == "codex-cli" }
     }
 
+    check("Default discovery avoids protected broad scan roots", failures: &failures) {
+      let home = fixture("Home")
+      let config = DiscoveryConfiguration.default(homeDirectory: home, projectRoot: home)
+      let protectedNames = ["Documents", "Desktop", "Downloads", "Library"]
+      return config.scanRoots.isEmpty
+        && protectedNames.allSatisfy { protectedName in
+          !config.scanRoots.contains {
+            $0.standardizedFileURL.path.hasPrefix(
+              home.appendingPathComponent(protectedName).standardizedFileURL.path)
+          }
+        }
+        && !config.enableFSEventsWatcher
+        && !config.enableEndpointSecurityMonitor
+        && !config.enableNetworkMonitor
+        && !config.enableUserApplicationSupportScan
+        && !config.allowsAutomaticAccess(
+          to: home.appendingPathComponent("Library/Application Support/Cursor/User/settings.json"))
+    }
+
     check("MCP JSON parser finds servers and risk", failures: &failures) {
       let servers = MCPConfigParser().parse(url: fixture("MCP/mcp.json"))
       return servers.count == 2

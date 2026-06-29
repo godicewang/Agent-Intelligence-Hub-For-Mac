@@ -2,7 +2,8 @@ import Foundation
 
 final class KeywordFileScanner {
   static let skipDirectoryNames: Set<String> = [
-    ".git", "node_modules", "build", "dist", "DerivedData", "Library/Caches", ".build", ".swiftpm",
+    ".git", "node_modules", "build", "dist", "DerivedData", "Library/Caches", "Caches",
+    ".build", ".swiftpm", "__pycache__",
   ]
 
   private let config: DiscoveryConfiguration
@@ -40,16 +41,21 @@ final class KeywordFileScanner {
 
   func scan(additionalRoots: [URL] = []) -> DiscoveryScanResult {
     var result = DiscoveryScanResult()
+    var budget = ScanBudget()
     let roots = (config.scanRoots + additionalRoots).map { $0.standardizedFileURL }.uniqueSorted()
 
     for root in roots where DiscoveryUtilities.directoryExists(root) {
-      walk(root, depth: 0, result: &result)
+      guard budget.canVisitDirectory(config.limits) else { break }
+      walk(root, depth: 0, budget: &budget, result: &result)
     }
     return result
   }
 
-  private func walk(_ directory: URL, depth: Int, result: inout DiscoveryScanResult) {
-    guard depth <= config.limits.maxDepth else { return }
+  private func walk(
+    _ directory: URL, depth: Int, budget: inout ScanBudget, result: inout DiscoveryScanResult
+  ) {
+    guard depth <= config.limits.maxDepth, budget.canVisitDirectory(config.limits) else { return }
+    budget.visitedDirectories += 1
     let names: [String]
     do {
       names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
@@ -72,8 +78,9 @@ final class KeywordFileScanner {
       var isDirectory: ObjCBool = false
       FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
       if isDirectory.boolValue {
-        walk(url, depth: depth + 1, result: &result)
-      } else if shouldInspect(url) {
+        walk(url, depth: depth + 1, budget: &budget, result: &result)
+      } else if shouldInspect(url), budget.canInspectFile(config.limits) {
+        budget.inspectedFiles += 1
         inspect(url, workspace: directory, result: &result)
       }
     }
@@ -165,5 +172,18 @@ final class KeywordFileScanner {
     if fileName == "AGENTS.md" || hits.contains("codex") { return "Agent Context" }
     if fileName == "GEMINI.md" || hits.contains("gemini") { return "Gemini Context" }
     return nil
+  }
+}
+
+private struct ScanBudget {
+  var visitedDirectories = 0
+  var inspectedFiles = 0
+
+  func canVisitDirectory(_ limits: ScanLimits) -> Bool {
+    visitedDirectories < limits.maxScannedDirectories
+  }
+
+  func canInspectFile(_ limits: ScanLimits) -> Bool {
+    inspectedFiles < limits.maxInspectedFiles
   }
 }

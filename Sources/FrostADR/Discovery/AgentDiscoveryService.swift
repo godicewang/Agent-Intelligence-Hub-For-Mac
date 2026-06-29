@@ -10,6 +10,7 @@ final class AgentDiscoveryService: ObservableObject {
   private let store: AssetGraphStore
   private let scanner: ColdStartScanner
   private let runtimeObserver: RuntimeAgentObserver
+  private let scanQueue = DispatchQueue(label: "frostadr.discovery.cold-start", qos: .userInitiated)
 
   init(
     configuration: DiscoveryConfiguration = .default(),
@@ -53,7 +54,9 @@ final class AgentDiscoveryService: ObservableObject {
   }
 
   func start() async {
-    await runColdStartScan()
+    if scanner.isColdStartEnabled {
+      await runColdStartScan()
+    }
     let states = runtimeObserver.start { [weak self] snapshot in
       self?.snapshot = snapshot
     }
@@ -67,10 +70,11 @@ final class AgentDiscoveryService: ObservableObject {
   }
 
   func runColdStartScan() async {
+    guard !isScanning else { return }
     isScanning = true
     lastError = nil
     do {
-      let result = scanner.runFullScan()
+      let result = await runScannerInBackground()
       snapshot = try store.merge(result)
     } catch {
       lastError = error.localizedDescription
@@ -94,6 +98,16 @@ final class AgentDiscoveryService: ObservableObject {
     } catch {
       lastError = error.localizedDescription
       return nil
+    }
+  }
+
+  private func runScannerInBackground() async -> DiscoveryScanResult {
+    let scanner = self.scanner
+    let scanQueue = self.scanQueue
+    return await withCheckedContinuation { continuation in
+      scanQueue.async {
+        continuation.resume(returning: scanner.runFullScan())
+      }
     }
   }
 }

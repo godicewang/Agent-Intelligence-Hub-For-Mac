@@ -14,7 +14,8 @@ final class SkillScanner {
   func scan(directory: URL, sourceAgentId: UUID? = nil) -> [SkillAsset] {
     guard DiscoveryUtilities.directoryExists(directory) else { return [] }
     var results: [SkillAsset] = []
-    walk(directory, depth: 0) { url in
+    var budget = SkillScanBudget()
+    walk(directory, depth: 0, budget: &budget) { url in
       if url.lastPathComponent == "SKILL.md" {
         let skillDirectory = url.deletingLastPathComponent()
         results.append(
@@ -57,7 +58,15 @@ final class SkillScanner {
   }
 
   private func walk(_ directory: URL, depth: Int, visit: (URL) -> Void) {
-    guard depth <= limits.maxDepth else { return }
+    var budget = SkillScanBudget()
+    walk(directory, depth: depth, budget: &budget, visit: visit)
+  }
+
+  private func walk(
+    _ directory: URL, depth: Int, budget: inout SkillScanBudget, visit: (URL) -> Void
+  ) {
+    guard depth <= limits.maxDepth, budget.canVisitDirectory(limits) else { return }
+    budget.visitedDirectories += 1
     let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
     for name in names.prefix(limits.maxDirectoryEntries) {
       if KeywordFileScanner.skipDirectoryNames.contains(name) { continue }
@@ -65,8 +74,10 @@ final class SkillScanner {
       var isDirectory: ObjCBool = false
       FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
       if isDirectory.boolValue {
-        walk(url, depth: depth + 1, visit: visit)
+        walk(url, depth: depth + 1, budget: &budget, visit: visit)
       } else {
+        guard budget.canInspectFile(limits) else { continue }
+        budget.inspectedFiles += 1
         visit(url)
       }
     }
@@ -74,18 +85,14 @@ final class SkillScanner {
 
   private func containsScriptFile(in directory: URL) -> Bool {
     let scriptExtensions: Set<String> = ["sh", "bash", "py", "js", "ts", "rb", "pl", "zsh"]
-    guard
-      let enumerator = FileManager.default.enumerator(
-        at: directory, includingPropertiesForKeys: nil)
-    else {
-      return false
-    }
-    for case let url as URL in enumerator {
+    var found = false
+    var budget = SkillScanBudget()
+    walk(directory, depth: 0, budget: &budget) { url in
       if scriptExtensions.contains(url.pathExtension.lowercased()) {
-        return true
+        found = true
       }
     }
-    return false
+    return found
   }
 
   private func description(from text: String) -> String? {
@@ -105,18 +112,26 @@ final class SkillScanner {
 
   private func directoryHash(_ directory: URL) -> String {
     var seed = ""
-    guard
-      let enumerator = FileManager.default.enumerator(
-        at: directory, includingPropertiesForKeys: nil)
-    else {
-      return DiscoveryUtilities.sha256ForString(directory.path)
-    }
-    for case let url as URL in enumerator {
+    var budget = SkillScanBudget()
+    walk(directory, depth: 0, budget: &budget) { url in
       if DiscoveryUtilities.fileSize(url) <= UInt64(limits.maxFileBytes) {
         seed +=
           "\(url.lastPathComponent):\(DiscoveryUtilities.sha256ForFile(url, maxBytes: limits.maxFileBytes));"
       }
     }
-    return DiscoveryUtilities.sha256ForString(seed)
+    return DiscoveryUtilities.sha256ForString(seed.isEmpty ? directory.path : seed)
+  }
+}
+
+private struct SkillScanBudget {
+  var visitedDirectories = 0
+  var inspectedFiles = 0
+
+  func canVisitDirectory(_ limits: ScanLimits) -> Bool {
+    visitedDirectories < limits.maxScannedDirectories
+  }
+
+  func canInspectFile(_ limits: ScanLimits) -> Bool {
+    inspectedFiles < limits.maxInspectedFiles
   }
 }

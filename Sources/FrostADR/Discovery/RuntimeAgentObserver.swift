@@ -22,6 +22,20 @@ final class RuntimeAgentObserver {
   func start(onUpdate: @escaping @MainActor (DiscoverySnapshot) -> Void)
     -> [DiscoveryPermissionState]
   {
+    guard config.enableRuntimeObserver else { return [] }
+    var states: [DiscoveryPermissionState] = []
+
+    if config.enableFSEventsWatcher && !config.scanRoots.isEmpty {
+      states.append(startFileSystemWatcher(onUpdate: onUpdate))
+    }
+    refreshProcesses(onUpdate: onUpdate)
+    return states
+  }
+
+  @MainActor
+  private func startFileSystemWatcher(onUpdate: @escaping @MainActor (DiscoverySnapshot) -> Void)
+    -> DiscoveryPermissionState
+  {
     let watcher = FSEventsWatcher { [keywordScanner, store] changedPaths in
       var result = DiscoveryScanResult()
       result.events.append(
@@ -45,8 +59,7 @@ final class RuntimeAgentObserver {
     }
     let state = watcher.start(paths: config.scanRoots)
     runtimeWatcher = watcher
-    refreshProcesses(onUpdate: onUpdate)
-    return [state]
+    return state
   }
 
   @MainActor

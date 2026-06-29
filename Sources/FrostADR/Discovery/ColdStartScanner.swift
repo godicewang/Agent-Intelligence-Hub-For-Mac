@@ -1,6 +1,6 @@
 import Foundation
 
-final class ColdStartScanner {
+final class ColdStartScanner: @unchecked Sendable {
   private let knownAgentScanner: KnownAgentScanner
   private let keywordScanner: KeywordFileScanner
   private let processInspector: ProcessInspector
@@ -8,6 +8,10 @@ final class ColdStartScanner {
   private let endpointSecurityMonitor: EndpointSecurityMonitor
   private let networkFlowMonitor: NetworkFlowMonitor
   private let config: DiscoveryConfiguration
+
+  var isColdStartEnabled: Bool {
+    config.enableColdStartScan
+  }
 
   init(
     knownAgentScanner: KnownAgentScanner,
@@ -41,9 +45,16 @@ final class ColdStartScanner {
         additionalRoots: result.agents.flatMap { $0.workspacePaths.map(URL.init(fileURLWithPath:)) }
       ))
     result.merge(processInspector.inspectRunningProcesses())
-    result.permissionStates.append(contentsOf: permissionInspector.inspect(paths: config.scanRoots))
-    result.permissionStates.append(endpointSecurityMonitor.permissionState())
-    result.permissionStates.append(networkFlowMonitor.permissionState())
+    if !config.scanRoots.isEmpty {
+      result.permissionStates.append(
+        contentsOf: permissionInspector.inspect(paths: config.scanRoots))
+    }
+    if config.enableEndpointSecurityMonitor {
+      result.permissionStates.append(endpointSecurityMonitor.permissionState())
+    }
+    if config.enableNetworkMonitor {
+      result.permissionStates.append(networkFlowMonitor.permissionState())
+    }
     result.events.append(
       DiscoveryEvent(
         id: UUID(),

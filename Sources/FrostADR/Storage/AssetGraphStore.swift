@@ -2,6 +2,7 @@ import Foundation
 
 final class AssetGraphStore {
   private let database: FrostDatabase
+  private let lock = NSLock()
 
   init(database: FrostDatabase) {
     self.database = database
@@ -12,6 +13,12 @@ final class AssetGraphStore {
   }
 
   func loadSnapshot() throws -> DiscoverySnapshot {
+    try lock.withLock {
+      try loadSnapshotUnlocked()
+    }
+  }
+
+  private func loadSnapshotUnlocked() throws -> DiscoverySnapshot {
     DiscoverySnapshot(
       agents: try database.loadAll(AgentAsset.self, kind: .agent),
       mcpServers: try database.loadAll(MCPServerAsset.self, kind: .mcpServer),
@@ -28,39 +35,41 @@ final class AssetGraphStore {
 
   @discardableResult
   func merge(_ result: DiscoveryScanResult) throws -> DiscoverySnapshot {
-    var snapshot = try loadSnapshot()
+    try lock.withLock {
+      var snapshot = try loadSnapshotUnlocked()
 
-    for evidence in result.evidence {
-      if !snapshot.evidence.contains(where: { $0.id == evidence.id }) {
-        snapshot.evidence.append(evidence)
+      for evidence in result.evidence {
+        if !snapshot.evidence.contains(where: { $0.id == evidence.id }) {
+          snapshot.evidence.append(evidence)
+        }
       }
-    }
 
-    for incoming in result.agents {
-      if let index = snapshot.agents.firstIndex(where: { $0.mergeKeyMatches(incoming) }) {
-        snapshot.agents[index].merge(with: incoming)
-      } else {
-        snapshot.agents.append(incoming)
+      for incoming in result.agents {
+        if let index = snapshot.agents.firstIndex(where: { $0.mergeKeyMatches(incoming) }) {
+          snapshot.agents[index].merge(with: incoming)
+        } else {
+          snapshot.agents.append(incoming)
+        }
       }
-    }
 
-    snapshot.mcpServers = mergeByKey(snapshot.mcpServers + result.mcpServers) {
-      "\($0.configPath)|\($0.name)|\($0.manifestHash)"
-    }
-    snapshot.skills = mergeByKey(snapshot.skills + result.skills) { "\($0.path)|\($0.hash)" }
-    snapshot.contextFiles = mergeByKey(snapshot.contextFiles + result.contextFiles) { $0.path }
-    snapshot.memories = mergeByKey(snapshot.memories + result.memories) { $0.path }
-    snapshot.runtimeProcesses = mergeByKey(snapshot.runtimeProcesses + result.runtimeProcesses) {
-      String($0.pid)
-    }
-    snapshot.permissionStates = mergeByKey(snapshot.permissionStates + result.permissionStates) {
-      $0.capability.rawValue
-    }
-    snapshot.events = mergeByKey(snapshot.events + result.events) { $0.id.uuidString }
-    snapshot.lastScannedAt = result.scannedAt
+      snapshot.mcpServers = mergeByKey(snapshot.mcpServers + result.mcpServers) {
+        "\($0.configPath)|\($0.name)|\($0.manifestHash)"
+      }
+      snapshot.skills = mergeByKey(snapshot.skills + result.skills) { "\($0.path)|\($0.hash)" }
+      snapshot.contextFiles = mergeByKey(snapshot.contextFiles + result.contextFiles) { $0.path }
+      snapshot.memories = mergeByKey(snapshot.memories + result.memories) { $0.path }
+      snapshot.runtimeProcesses = mergeByKey(snapshot.runtimeProcesses + result.runtimeProcesses) {
+        String($0.pid)
+      }
+      snapshot.permissionStates = mergeByKey(snapshot.permissionStates + result.permissionStates) {
+        $0.capability.rawValue
+      }
+      snapshot.events = mergeByKey(snapshot.events + result.events) { $0.id.uuidString }
+      snapshot.lastScannedAt = result.scannedAt
 
-    try persist(snapshot)
-    return snapshot
+      try persist(snapshot)
+      return snapshot
+    }
   }
 
   func exportJSONL(to url: URL) throws {
@@ -124,6 +133,14 @@ final class AssetGraphStore {
         lines.append(line)
       }
     }
+  }
+}
+
+extension NSLock {
+  fileprivate func withLock<T>(_ body: () throws -> T) rethrows -> T {
+    lock()
+    defer { unlock() }
+    return try body()
   }
 }
 

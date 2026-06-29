@@ -114,12 +114,35 @@ enum DiscoveryUtilities {
     }
     return .unknown
   }
+
+  static func isUserApplicationSupportPath(
+    _ url: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser
+  ) -> Bool {
+    let path = url.standardizedFileURL.path
+    let applicationSupport = home.standardizedFileURL
+      .appendingPathComponent("Library")
+      .appendingPathComponent("Application Support")
+      .path
+    return path == applicationSupport || path.hasPrefix(applicationSupport + "/")
+  }
 }
 
 struct ScanLimits: Codable, Hashable {
   var maxDepth: Int = 5
   var maxFileBytes: Int = 256 * 1024
-  var maxDirectoryEntries: Int = 12_000
+  var maxDirectoryEntries: Int = 1_500
+  var maxScannedDirectories: Int = 700
+  var maxInspectedFiles: Int = 1_200
+  var maxCollectedMemoryFiles: Int = 120
+
+  static let lightweightDefault = ScanLimits(
+    maxDepth: 3,
+    maxFileBytes: 128 * 1024,
+    maxDirectoryEntries: 800,
+    maxScannedDirectories: 350,
+    maxInspectedFiles: 700,
+    maxCollectedMemoryFiles: 80
+  )
 }
 
 extension StringProtocol {
