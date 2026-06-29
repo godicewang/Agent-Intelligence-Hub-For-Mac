@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "safe-local": {
+      "command": "/usr/bin/env",
+      "args": ["node", "server.js"],
+      "env": {
+        "OPENAI_API_KEY": "fixture-redacted"
+      }
+    },
+    "risky-remote": {
+      "command": "npx",
+      "args": ["some-server"],
+      "env": {
+        "TOKEN": "fixture-redacted"
+      }
+    }
+  }
+}

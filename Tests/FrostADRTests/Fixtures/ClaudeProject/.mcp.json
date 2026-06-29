@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "fixture-claude": {
+      "command": "python",
+      "args": ["server.py"]
+    }
+  }
+}

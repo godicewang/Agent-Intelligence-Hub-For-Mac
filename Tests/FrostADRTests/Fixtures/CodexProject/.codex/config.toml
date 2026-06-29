@@ -1,0 +1,3 @@
+[mcp_servers.fixture]
+command = "node"
+args = ["fixture-server.js"]

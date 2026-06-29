@@ -13,7 +13,10 @@ let package = Package(
   targets: [
     .executableTarget(
       name: "FrostADR",
-      path: "Sources/FrostADR"
+      path: "Sources/FrostADR",
+      resources: [
+        .process("Discovery/Fingerprints")
+      ]
     )
   ]
 )

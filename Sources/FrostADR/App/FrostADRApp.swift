@@ -2,6 +2,12 @@ import SwiftUI
 
 @main
 struct FrostADRApp: App {
+  init() {
+    if CommandLine.arguments.contains("--discovery-self-test") {
+      Foundation.exit(DiscoverySelfTest.run())
+    }
+  }
+
   var body: some Scene {
     WindowGroup {
       RootView()
