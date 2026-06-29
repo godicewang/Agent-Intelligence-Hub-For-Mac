@@ -3,15 +3,26 @@ import Foundation
 final class ProcessInspector {
   private let behaviorEngine: BehaviorFingerprintEngine
   private let config: DiscoveryConfiguration
+  private let registry: FingerprintRegistry?
 
-  init(behaviorEngine: BehaviorFingerprintEngine, config: DiscoveryConfiguration) {
+  init(
+    behaviorEngine: BehaviorFingerprintEngine, config: DiscoveryConfiguration,
+    registry: FingerprintRegistry? = nil
+  ) {
     self.behaviorEngine = behaviorEngine
     self.config = config
+    self.registry = registry
   }
 
   func inspectRunningProcesses() -> DiscoveryScanResult {
+    inspect(observations: processRows())
+  }
+
+  func inspect(observations rows: [ProcessObservation]) -> DiscoveryScanResult {
     var result = DiscoveryScanResult()
-    for row in processRows() {
+    for row in rows {
+      result.merge(knownProcessResult(for: row))
+
       let input = BehaviorFingerprintInput(
         processName: URL(fileURLWithPath: row.command).lastPathComponent,
         executablePath: row.command,
@@ -79,7 +90,49 @@ final class ProcessInspector {
     return result
   }
 
-  private func processRows() -> [ProcessRow] {
+  private func knownProcessResult(for row: ProcessObservation) -> DiscoveryScanResult {
+    var result = DiscoveryScanResult()
+    guard let registry else { return result }
+
+    let processName = URL(fileURLWithPath: row.command).lastPathComponent
+    for fingerprint in registry.fingerprints
+    where fingerprint.confidenceWeights.process >= 20
+      && fingerprint.processNames.contains(where: {
+        $0.caseInsensitiveCompare(processName) == .orderedSame
+      })
+    {
+      let confidence = fingerprint.confidenceWeights.process
+      let agent = AgentAsset(
+        displayName: fingerprint.displayName,
+        normalizedName: fingerprint.normalizedName,
+        agentType: fingerprint.agentType,
+        vendor: fingerprint.vendor,
+        confidence: confidence,
+        discoveryMethods: [.processFingerprint],
+        scopes: [.runtime],
+        processIds: [row.pid],
+        executablePaths: [row.command],
+        managedStatus: .observableOnly,
+        runtimeStatus: .running,
+        riskLevel: .informational,
+        metadataSummary: "Running process matched known fingerprint: \(processName)"
+      )
+      result.agents.append(agent)
+      result.evidence.append(
+        DiscoveryEvidence(
+          assetId: agent.id,
+          evidenceType: .process,
+          source: fingerprint.normalizedName,
+          processId: row.pid,
+          confidenceDelta: confidence,
+          summary: "Known process fingerprint matched",
+          rawKey: processName
+        ))
+    }
+    return result
+  }
+
+  private func processRows() -> [ProcessObservation] {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/ps")
     process.arguments = ["-axo", "pid=,ppid=,comm=,args="]
@@ -94,7 +147,7 @@ final class ProcessInspector {
     }
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
     guard let output = String(data: data, encoding: .utf8) else { return [] }
-    return output.components(separatedBy: .newlines).compactMap(ProcessRow.init(line:))
+    return output.components(separatedBy: .newlines).compactMap(ProcessObservation.init(line:))
   }
 
   private func providers(in text: String) -> [String] {
@@ -128,11 +181,18 @@ final class ProcessInspector {
   }
 }
 
-private struct ProcessRow {
+struct ProcessObservation: Hashable {
   var pid: Int32
   var ppid: Int32
   var command: String
   var arguments: String
+
+  init(pid: Int32, ppid: Int32, command: String, arguments: String) {
+    self.pid = pid
+    self.ppid = ppid
+    self.command = command
+    self.arguments = arguments
+  }
 
   init?(line: String) {
     let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)

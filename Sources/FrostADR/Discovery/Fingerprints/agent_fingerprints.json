@@ -248,5 +248,30 @@
       "cache": 5,
       "memory": 5
     }
+  },
+  {
+    "displayName": "Unknown Terminal Agent Candidate",
+    "normalizedName": "unknown-terminal-agent-candidate",
+    "vendor": null,
+    "agentType": "unknownCandidate",
+    "processNames": ["zsh", "bash", "node", "python", "python3", "deno"],
+    "installPaths": [],
+    "configPaths": [],
+    "projectMarkers": ["AGENTS.md", "CLAUDE.md", "GEMINI.md", ".mcp.json", "SKILL.md"],
+    "mcpConfigPaths": [],
+    "skillPaths": [],
+    "cachePaths": [],
+    "extensionPaths": [],
+    "memoryPaths": [],
+    "confidenceWeights": {
+      "installPath": 0,
+      "configPath": 0,
+      "process": 20,
+      "projectMarker": 20,
+      "mcpConfig": 0,
+      "skill": 0,
+      "cache": 0,
+      "memory": 0
+    }
   }
 ]

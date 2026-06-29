@@ -7,6 +7,7 @@ final class AgentScanViewModel: ObservableObject {
   @Published var isScanning = false
   @Published var errorMessage: String?
   @Published var exportMessage: String?
+  @Published var configuration: DiscoveryConfiguration = .default()
 
   private let service: AgentDiscoveryService?
   private var hasStarted = false
@@ -16,6 +17,7 @@ final class AgentScanViewModel: ObservableObject {
     do {
       let service = try AgentDiscoveryService()
       self.service = service
+      configuration = service.configuration
       snapshot = service.snapshot
       service.$snapshot
         .receive(on: DispatchQueue.main)

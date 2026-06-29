@@ -13,7 +13,7 @@ struct PageHeader: View {
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(FrostTheme.mutedText)
 
-          StatusBadge(label: "UI Shell", tone: .info)
+          StatusBadge(label: "Local Endpoint", tone: .info)
         }
 
         Text(title)
@@ -32,7 +32,7 @@ struct PageHeader: View {
           .font(.system(size: 12, weight: .semibold))
           .foregroundStyle(FrostTheme.mutedText)
 
-        Text("等待端上数据接入")
+        Text("端上轻量发现")
           .font(.system(size: 12, weight: .medium))
           .foregroundStyle(FrostTheme.accent)
       }

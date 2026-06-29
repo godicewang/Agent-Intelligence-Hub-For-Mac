@@ -6,6 +6,7 @@ final class AgentDiscoveryService: ObservableObject {
   @Published private(set) var isScanning = false
   @Published private(set) var lastError: String?
   @Published private(set) var lastExportURL: URL?
+  let configuration: DiscoveryConfiguration
 
   private let store: AssetGraphStore
   private let scanner: ColdStartScanner
@@ -16,6 +17,7 @@ final class AgentDiscoveryService: ObservableObject {
     configuration: DiscoveryConfiguration = .default(),
     store: AssetGraphStore? = nil
   ) throws {
+    self.configuration = configuration
     let registry = try FingerprintRegistry.bundled()
     let actualStore: AssetGraphStore
     if let store {
@@ -28,7 +30,7 @@ final class AgentDiscoveryService: ObservableObject {
     let keywordScanner = KeywordFileScanner(
       config: configuration, skillScanner: skillScanner, memoryScanner: memoryScanner)
     let processInspector = ProcessInspector(
-      behaviorEngine: BehaviorFingerprintEngine(), config: configuration)
+      behaviorEngine: BehaviorFingerprintEngine(), config: configuration, registry: registry)
     self.store = actualStore
     scanner = ColdStartScanner(
       knownAgentScanner: KnownAgentScanner(

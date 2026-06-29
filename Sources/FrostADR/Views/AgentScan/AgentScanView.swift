@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AgentScanView: View {
   @StateObject private var viewModel = AgentScanViewModel()
+  @State private var selectedAgentID: UUID?
 
   var body: some View {
     FrostPage {
@@ -53,13 +54,17 @@ struct AgentScanView: View {
             .controlSize(.small)
         }
 
-        Button("导出 JSONL") {
+        Button {
           viewModel.exportJSONL()
+        } label: {
+          Label("导出 JSONL", systemImage: "square.and.arrow.down")
         }
         .disabled(viewModel.isScanning)
 
-        Button("重新扫描") {
+        Button {
           viewModel.rescan()
+        } label: {
+          Label("重新扫描", systemImage: "arrow.clockwise")
         }
         .disabled(viewModel.isScanning)
       }
@@ -129,24 +134,54 @@ struct AgentScanView: View {
 
   @ViewBuilder
   private var content: some View {
-    if viewModel.snapshot.agents.isEmpty && !viewModel.isScanning {
-      FrostCard("真实空状态", subtitle: "No local agent assets discovered") {
-        EmptyStateView(
-          title: "未发现 Agent 资产",
-          message:
-            "当前扫描范围内没有发现 Agent、MCP、Skill 或上下文资产。你可以创建 AGENTS.md、.mcp.json 或安装本地 Agent 后重新扫描。",
-          systemImage: "checkmark.shield"
-        )
-        .frame(minHeight: 260)
-      }
-    } else {
+    FrostDetailLayout(detailWidth: 360) {
       VStack(alignment: .leading, spacing: 16) {
-        agentsSection
-        mcpSection
-        skillSection
-        contextSection
+        if isDiscoveryEmpty && !viewModel.isScanning {
+          emptyOverview
+        } else {
+          agentsSection
+          mcpSkillGrid
+          contextSection
+        }
+      }
+    } detail: {
+      VStack(alignment: .leading, spacing: 16) {
+        scanScopeSection
+        selectedAgentSection
+        runtimeSection
         permissionSection
       }
+    }
+  }
+
+  private var isDiscoveryEmpty: Bool {
+    viewModel.snapshot.agents.isEmpty && viewModel.snapshot.mcpServers.isEmpty
+      && viewModel.snapshot.skills.isEmpty && viewModel.snapshot.contextFiles.isEmpty
+      && viewModel.snapshot.memories.isEmpty
+  }
+
+  private var sortedAgents: [AgentAsset] {
+    viewModel.snapshot.agents.sorted {
+      if $0.confidence == $1.confidence {
+        return $0.displayName < $1.displayName
+      }
+      return $0.confidence > $1.confidence
+    }
+  }
+
+  private var selectedAgent: AgentAsset? {
+    sortedAgents.first { $0.id == selectedAgentID } ?? sortedAgents.first
+  }
+
+  private var emptyOverview: some View {
+    FrostCard("真实空状态", subtitle: "No local agent assets discovered") {
+      EmptyStateView(
+        title: "未发现 Agent 资产",
+        message:
+          "当前轻量扫描范围内没有发现 Agent、MCP、Skill 或上下文资产。创建 AGENTS.md、.mcp.json、SKILL.md 或安装本地 Agent 后可重新扫描。",
+        systemImage: "checkmark.shield"
+      )
+      .frame(minHeight: 260)
     }
   }
 
@@ -157,20 +192,49 @@ struct AgentScanView: View {
           title: "暂无 Agent", message: "扫描完成后未发现 Agent 资产。", systemImage: "tray", compact: true)
       } else {
         VStack(spacing: 0) {
-          tableHeader(["名称", "类型", "状态", "置信度", "风险", "最近扫描"])
-          ForEach(viewModel.snapshot.agents.sorted(by: { $0.confidence > $1.confidence })) {
-            agent in
-            row([
-              agent.displayName,
-              agent.agentType.rawValue,
-              agent.runtimeStatus.rawValue,
-              "\(agent.confidence)",
-              agent.riskLevel.rawValue,
-              agent.lastScannedAt.formatted(date: .numeric, time: .shortened),
-            ])
+          tableHeader(["名称", "类型", "状态", "MCP", "Skill", "置信度", "风险"])
+          ForEach(sortedAgents) { agent in
+            agentRow(agent)
           }
         }
       }
+    }
+  }
+
+  private func agentRow(_ agent: AgentAsset) -> some View {
+    Button {
+      selectedAgentID = agent.id
+    } label: {
+      VStack(spacing: 0) {
+        HStack(spacing: 0) {
+          rowText(agent.displayName)
+          rowText(agent.agentType.rawValue)
+          rowText(agent.runtimeStatus.rawValue)
+          rowText("\(mcpCount(for: agent))")
+          rowText("\(skillCount(for: agent))")
+          rowText("\(agent.confidence)")
+          HStack {
+            StatusBadge(label: agent.riskLevel.rawValue, tone: tone(for: agent.riskLevel))
+            Spacer(minLength: 0)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 10)
+          .padding(.vertical, 8)
+        }
+        Divider()
+      }
+      .background(
+        (selectedAgent?.id == agent.id ? FrostTheme.accent.opacity(0.09) : Color.clear)
+      )
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+  }
+
+  private var mcpSkillGrid: some View {
+    HStack(alignment: .top, spacing: 16) {
+      mcpSection
+      skillSection
     }
   }
 
@@ -257,6 +321,114 @@ struct AgentScanView: View {
     }
   }
 
+  private var scanScopeSection: some View {
+    FrostCard("Scan Scope", subtitle: "启动权限与扫描边界") {
+      VStack(alignment: .leading, spacing: 12) {
+        WrapBadges {
+          StatusBadge(
+            label: viewModel.configuration.enableColdStartScan ? "Cold Start On" : "Cold Start Off",
+            tone: viewModel.configuration.enableColdStartScan ? .healthy : .neutral)
+          StatusBadge(
+            label: viewModel.configuration.enableRuntimeObserver ? "Runtime On" : "Runtime Off",
+            tone: viewModel.configuration.enableRuntimeObserver ? .healthy : .neutral)
+          StatusBadge(
+            label: viewModel.configuration.enableFSEventsWatcher ? "FSEvents On" : "FSEvents Off",
+            tone: viewModel.configuration.enableFSEventsWatcher ? .info : .neutral)
+          StatusBadge(
+            label: viewModel.configuration.enableUserApplicationSupportScan
+              ? "App Data On" : "App Data Off",
+            tone: viewModel.configuration.enableUserApplicationSupportScan ? .warning : .neutral)
+          StatusBadge(
+            label: viewModel.configuration.enableEndpointSecurityMonitor ? "ES On" : "ES Off",
+            tone: viewModel.configuration.enableEndpointSecurityMonitor ? .warning : .neutral)
+          StatusBadge(
+            label: viewModel.configuration.enableNetworkMonitor ? "Network On" : "Network Off",
+            tone: viewModel.configuration.enableNetworkMonitor ? .warning : .neutral)
+        }
+
+        Divider()
+
+        if viewModel.configuration.scanRoots.isEmpty {
+          EmptyStateView(
+            title: "轻量启动模式",
+            message: "当前没有自动工作区扫描根；仅检查无需额外授权的已知 Agent 路径和运行进程指纹。",
+            systemImage: "scope", compact: true)
+        } else {
+          VStack(alignment: .leading, spacing: 7) {
+            Text("Active Roots")
+              .font(.system(size: 11, weight: .bold))
+              .foregroundStyle(FrostTheme.mutedText)
+            ForEach(viewModel.configuration.scanRoots.map(\.path), id: \.self) { path in
+              compactPath(path)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private var selectedAgentSection: some View {
+    FrostCard("Agent Detail", subtitle: "选中资产详情") {
+      if let agent = selectedAgent {
+        VStack(alignment: .leading, spacing: 12) {
+          VStack(alignment: .leading, spacing: 6) {
+            Text(agent.displayName)
+              .font(.system(size: 15, weight: .bold))
+              .lineLimit(2)
+            HStack(spacing: 6) {
+              StatusBadge(label: agent.agentType.rawValue, tone: .info)
+              StatusBadge(label: agent.managedStatus.rawValue, tone: .neutral)
+              StatusBadge(label: agent.riskLevel.rawValue, tone: tone(for: agent.riskLevel))
+            }
+          }
+
+          Divider()
+
+          detailRow("Confidence", "\(agent.confidence)")
+          detailRow("Runtime", agent.runtimeStatus.rawValue)
+          detailRow("Scopes", agent.scopes.map(\.rawValue).joined(separator: ", "))
+          detailRow("Methods", agent.discoveryMethods.map(\.rawValue).joined(separator: ", "))
+
+          pathGroup("Config", agent.configPaths)
+          pathGroup("Workspace", agent.workspacePaths)
+          pathGroup("MCP", agent.mcpConfigPaths)
+          pathGroup("Skills", agent.skillPaths)
+          pathGroup("Memory", agent.memoryPaths)
+
+          if let summary = agent.metadataSummary, !summary.isEmpty {
+            Text(summary)
+              .font(.system(size: 11))
+              .foregroundStyle(FrostTheme.mutedText)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        }
+      } else {
+        EmptyStateView(
+          title: "未选择 Agent",
+          message: "发现真实 Agent 后，点击左侧资产行查看路径、方法和风险摘要。",
+          systemImage: "sidebar.right", compact: true)
+      }
+    }
+  }
+
+  private var runtimeSection: some View {
+    FrostCard("Runtime Evidence", subtitle: "进程、证据与事件") {
+      VStack(alignment: .leading, spacing: 10) {
+        detailRow("Runtime Processes", "\(viewModel.snapshot.runtimeProcesses.count)")
+        detailRow("Evidence", "\(viewModel.snapshot.evidence.count)")
+        detailRow("Events", "\(viewModel.snapshot.events.count)")
+        if let latest = viewModel.snapshot.events.sorted(by: { $0.createdAt > $1.createdAt }).first
+        {
+          Divider()
+          Text(latest.message)
+            .font(.system(size: 11))
+            .foregroundStyle(FrostTheme.mutedText)
+            .lineLimit(3)
+        }
+      }
+    }
+  }
+
   private func tableHeader(_ columns: [String]) -> some View {
     HStack(spacing: 0) {
       ForEach(columns, id: \.self) { column in
@@ -275,17 +447,102 @@ struct AgentScanView: View {
     VStack(spacing: 0) {
       HStack(spacing: 0) {
         ForEach(Array(columns.enumerated()), id: \.offset) { _, value in
-          Text(value.isEmpty ? "-" : value)
-            .font(.system(size: 12))
-            .lineLimit(2)
-            .truncationMode(.middle)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+          rowText(value)
         }
       }
       Divider()
     }
+  }
+
+  private func rowText(_ value: String) -> some View {
+    Text(value.isEmpty ? "-" : value)
+      .font(.system(size: 12))
+      .lineLimit(2)
+      .truncationMode(.middle)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, 10)
+      .padding(.vertical, 8)
+  }
+
+  private func detailRow(_ title: String, _ value: String) -> some View {
+    HStack(alignment: .top, spacing: 10) {
+      Text(title)
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(FrostTheme.mutedText)
+        .frame(width: 112, alignment: .leading)
+
+      Text(value.isEmpty ? "-" : value)
+        .font(.system(size: 11))
+        .lineLimit(3)
+        .truncationMode(.middle)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+  }
+
+  private func pathGroup(_ title: String, _ paths: [String]) -> some View {
+    Group {
+      if !paths.isEmpty {
+        VStack(alignment: .leading, spacing: 6) {
+          Text(title)
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(FrostTheme.mutedText)
+          ForEach(paths.prefix(4), id: \.self) { path in
+            compactPath(path)
+          }
+        }
+      }
+    }
+  }
+
+  private func compactPath(_ path: String) -> some View {
+    Text(path)
+      .font(.system(size: 10.5, design: .monospaced))
+      .lineLimit(1)
+      .truncationMode(.middle)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 5)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+          .fill(FrostTheme.tableRowBackground)
+      )
+  }
+
+  private func mcpCount(for agent: AgentAsset) -> Int {
+    let pathSet = Set(agent.mcpConfigPaths + agent.configPaths)
+    return viewModel.snapshot.mcpServers.filter {
+      $0.sourceAgentId == agent.id || pathSet.contains($0.configPath)
+    }.count
+  }
+
+  private func skillCount(for agent: AgentAsset) -> Int {
+    viewModel.snapshot.skills.filter {
+      $0.sourceAgentId == agent.id || agent.skillPaths.contains($0.path)
+    }.count
+  }
+
+  private func tone(for risk: RiskLevel) -> StatusBadgeTone {
+    switch risk {
+    case .informational:
+      .info
+    case .low:
+      .healthy
+    case .medium:
+      .warning
+    case .high, .critical:
+      .critical
+    }
+  }
+}
+
+private struct WrapBadges<Content: View>: View {
+  @ViewBuilder var content: Content
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 7) {
+      content
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 
