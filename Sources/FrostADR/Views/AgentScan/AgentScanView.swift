@@ -71,15 +71,6 @@ struct AgentScanView: View {
         .disabled(viewModel.isScanning)
       }
 
-      if let exportMessage = viewModel.exportMessage {
-        Divider()
-          .padding(.vertical, 10)
-
-        Label(exportMessage, systemImage: "square.and.arrow.down")
-          .font(.system(size: 12))
-          .foregroundStyle(FrostTheme.mutedText)
-      }
-
       if let error = viewModel.errorMessage {
         Divider()
           .padding(.vertical, 10)
