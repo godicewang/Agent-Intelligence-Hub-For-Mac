@@ -37,6 +37,7 @@ final class RuntimeAgentObserver {
     -> DiscoveryPermissionState
   {
     let watcher = FSEventsWatcher { [keywordScanner, store] changedPaths in
+      let deadline = Date().addingTimeInterval(3)
       var result = DiscoveryScanResult()
       result.events.append(
         DiscoveryEvent(
@@ -50,7 +51,9 @@ final class RuntimeAgentObserver {
         keywordScanner.scan(
           additionalRoots: changedPaths.map {
             $0.hasDirectoryPath ? $0 : $0.deletingLastPathComponent()
-          }))
+          },
+          deadline: deadline
+        ))
       if let snapshot = try? store.merge(result) {
         Task { @MainActor in
           onUpdate(snapshot)

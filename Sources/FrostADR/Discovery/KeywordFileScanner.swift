@@ -81,7 +81,7 @@ final class KeywordFileScanner {
         walk(url, depth: depth + 1, budget: &budget, result: &result)
       } else if shouldInspect(url), budget.canInspectFile(config.limits) {
         budget.inspectedFiles += 1
-        inspect(url, workspace: directory, result: &result)
+        inspect(url, workspace: directory, deadline: budget.deadline, result: &result)
       }
     }
   }
@@ -97,11 +97,14 @@ final class KeywordFileScanner {
     return false
   }
 
-  private func inspect(_ url: URL, workspace: URL, result: inout DiscoveryScanResult) {
+  private func inspect(
+    _ url: URL, workspace: URL, deadline: Date?, result: inout DiscoveryScanResult
+  ) {
     let name = url.lastPathComponent
     if name == "SKILL.md" {
       result.skills.append(
-        contentsOf: skillScanner.scan(directory: url.deletingLastPathComponent()))
+        contentsOf: skillScanner.scan(
+          directory: url.deletingLastPathComponent(), deadline: deadline))
       return
     }
 

@@ -7,7 +7,8 @@ final class NetworkFlowMonitor {
     let entitlement = "com.apple.developer.networking.networkextension" as CFString
     let task = SecTaskCreateFromSelf(nil)
     let value = task.flatMap { SecTaskCopyValueForEntitlement($0, entitlement, nil) }
-    let hasEntitlement = value != nil
+    let hasEntitlement =
+      (value as? Bool) == true || ((value as? [String])?.isEmpty == false)
     return DiscoveryPermissionState(
       id: UUID(),
       capability: .networkExtension,

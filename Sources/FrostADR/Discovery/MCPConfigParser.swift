@@ -1,6 +1,12 @@
 import Foundation
 
 final class MCPConfigParser {
+  private let maxConfigBytes: Int
+
+  init(maxConfigBytes: Int = 512 * 1024) {
+    self.maxConfigBytes = maxConfigBytes
+  }
+
   func parse(url: URL, sourceAgentId: UUID? = nil, workspacePath: String? = nil) -> [MCPServerAsset]
   {
     let ext = url.pathExtension.lowercased()
@@ -14,6 +20,7 @@ final class MCPConfigParser {
     -> [MCPServerAsset]
   {
     guard
+      DiscoveryUtilities.fileSize(url) <= UInt64(maxConfigBytes),
       let data = try? Data(contentsOf: url),
       let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     else {
@@ -36,7 +43,7 @@ final class MCPConfigParser {
   func parseTOML(url: URL, sourceAgentId: UUID? = nil, workspacePath: String? = nil)
     -> [MCPServerAsset]
   {
-    guard let text = DiscoveryUtilities.readSmallTextFile(url, maxBytes: 512 * 1024) else {
+    guard let text = DiscoveryUtilities.readSmallTextFile(url, maxBytes: maxConfigBytes) else {
       return []
     }
 

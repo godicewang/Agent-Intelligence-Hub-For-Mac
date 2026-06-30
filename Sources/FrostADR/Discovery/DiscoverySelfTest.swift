@@ -82,6 +82,17 @@ enum DiscoverySelfTest {
         && servers[0].envKeyNames == ["PASSWORD"]
     }
 
+    check("MCP parser skips oversized config files", failures: &failures) {
+      let root = try temporaryDirectory(named: "MCPLarge")
+      let config = root.appendingPathComponent("mcp.json")
+      let largePadding = String(repeating: "x", count: 2048)
+      try write(
+        #"{"mcpServers":{"oversized":{"command":"node","args":["server.js"]}},"padding":""#
+          + largePadding + #""}"#,
+        to: config)
+      return MCPConfigParser(maxConfigBytes: 512).parse(url: config).isEmpty
+    }
+
     check("Skill scanner finds Layer 1 signals", failures: &failures) {
       let skills = SkillScanner().scan(directory: fixture("Skill"))
       return skills.count == 1 && skills[0].hasScripts && skills[0].hasExternalURLs
@@ -181,6 +192,19 @@ enum DiscoverySelfTest {
       FileSystemPermissionInspector().inspect(paths: []).isEmpty
     }
 
+    check(
+      "Network flow monitor maps known LLM providers without enabling extension",
+      failures: &failures
+    ) {
+      let monitor = NetworkFlowMonitor()
+      let state = monitor.permissionState()
+      return monitor.knownProviderName(for: "api.openai.com") == "OpenAI"
+        && monitor.knownProviderName(for: "api.anthropic.com") == "Anthropic"
+        && monitor.knownProviderName(for: "generativelanguage.googleapis.com") == "Gemini"
+        && monitor.knownProviderName(for: "localhost:11434") == "Ollama"
+        && [PermissionStatus.available, .missingEntitlement].contains(state.status)
+    }
+
     check("Behavior fingerprint scores agent candidate", failures: &failures) {
       let result = BehaviorFingerprintEngine().evaluate(
         BehaviorFingerprintInput(
@@ -229,6 +253,98 @@ enum DiscoverySelfTest {
         $0.normalizedName == "codex-cli" && $0.runtimeStatus == .running
           && $0.processIds.contains(4242)
       }
+    }
+
+    check("Process inspector does not classify generic shell by name only", failures: &failures) {
+      let root = try temporaryDirectory(named: "GenericShell")
+      let config = DiscoveryConfiguration(
+        homeDirectory: root,
+        projectRoot: root,
+        scanRoots: [],
+        limits: .lightweightDefault,
+        enableColdStartScan: true,
+        enableRuntimeObserver: false,
+        enableFSEventsWatcher: false,
+        enableEndpointSecurityMonitor: false,
+        enableNetworkMonitor: false,
+        enableUserApplicationSupportScan: false
+      )
+      let result = try ProcessInspector(
+        behaviorEngine: BehaviorFingerprintEngine(), config: config, registry: .bundled()
+      ).inspect(
+        observations: [
+          ProcessObservation(pid: 4343, ppid: 1, command: "/bin/zsh", arguments: "zsh")
+        ])
+      return result.agents.isEmpty && result.runtimeProcesses.isEmpty
+    }
+
+    check("Process inspector still identifies behavior-based custom agent", failures: &failures) {
+      let root = try temporaryDirectory(named: "BehaviorProcess")
+      try write("agent tool call", to: root.appendingPathComponent("AGENTS.md"))
+      let config = DiscoveryConfiguration(
+        homeDirectory: root,
+        projectRoot: root,
+        scanRoots: [root],
+        limits: .lightweightDefault,
+        enableColdStartScan: true,
+        enableRuntimeObserver: false,
+        enableFSEventsWatcher: false,
+        enableEndpointSecurityMonitor: false,
+        enableNetworkMonitor: false,
+        enableUserApplicationSupportScan: false
+      )
+      let result = try ProcessInspector(
+        behaviorEngine: BehaviorFingerprintEngine(), config: config, registry: .bundled()
+      ).inspect(
+        observations: [
+          ProcessObservation(
+            pid: 4444,
+            ppid: 1,
+            command: "/usr/local/bin/custom-runner",
+            arguments:
+              "custom-runner --base_url https://api.openai.com/v1/chat/completions --tool_choice auto --workspace \(root.path) --session session.jsonl --exec bash"
+          )
+        ])
+      return result.agents.contains { $0.agentType == .customTerminal && $0.confidence >= 60 }
+        && result.runtimeProcesses.contains { $0.pid == 4444 }
+    }
+
+    check("Cold start scanner respects scan time budget", failures: &failures) {
+      let root = try temporaryDirectory(named: "ColdStartBudget")
+      let config = DiscoveryConfiguration(
+        homeDirectory: root,
+        projectRoot: root,
+        scanRoots: [],
+        limits: ScanLimits(
+          maxDepth: 1, maxFileBytes: 1024, maxDirectoryEntries: 8,
+          maxScannedDirectories: 4, maxInspectedFiles: 4, maxCollectedMemoryFiles: 2,
+          maxScanSeconds: -1),
+        enableColdStartScan: true,
+        enableRuntimeObserver: false,
+        enableFSEventsWatcher: false,
+        enableEndpointSecurityMonitor: false,
+        enableNetworkMonitor: false,
+        enableUserApplicationSupportScan: false
+      )
+      let result = try ColdStartScanner(
+        knownAgentScanner: KnownAgentScanner(
+          registry: .bundled(),
+          skillScanner: SkillScanner(limits: config.limits),
+          memoryScanner: MemoryFileScanner(limits: config.limits),
+          config: config),
+        keywordScanner: KeywordFileScanner(
+          config: config,
+          skillScanner: SkillScanner(limits: config.limits),
+          memoryScanner: MemoryFileScanner(limits: config.limits)),
+        processInspector: ProcessInspector(
+          behaviorEngine: BehaviorFingerprintEngine(), config: config, registry: .bundled()),
+        permissionInspector: FileSystemPermissionInspector(),
+        endpointSecurityMonitor: EndpointSecurityMonitor(),
+        networkFlowMonitor: NetworkFlowMonitor(),
+        config: config
+      ).runFullScan()
+      return result.events.contains { $0.message.contains("time budget") }
+        && result.runtimeProcesses.isEmpty
     }
 
     check("AssetGraphStore persists and merges", failures: &failures) {

@@ -291,7 +291,7 @@
     "confidenceWeights": {
       "installPath": 0,
       "configPath": 0,
-      "process": 20,
+      "process": 0,
       "projectMarker": 20,
       "mcpConfig": 0,
       "skill": 0,
