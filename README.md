@@ -16,6 +16,16 @@ FrostADR 是一款面向 macOS Apple Silicon 的端上 Agent Detection & Respons
 - 本地 JSONL 导出与 Finder 定位
 - 默认本地优先、no-exec、最小权限的发现流程
 
+## 发现模块验证
+
+运行发现模块自检和打包后资源校验：
+
+```bash
+Scripts/run_discovery_tests.sh
+```
+
+该脚本会执行 Agent Discovery 自检、构建 `dist/FrostADR.app`、确认指纹资源已随 app 打包，并使用打包后的 app 再运行一次自检。
+
 ## 启动 macOS App
 
 For the easiest local preview, double-click `FrostADR.command` in Finder.

@@ -43,6 +43,17 @@ enum DiscoverySelfTest {
           to: home.appendingPathComponent("Library/Application Support/Cursor/User/settings.json"))
     }
 
+    check("Default discovery includes safe common code roots", failures: &failures) {
+      let root = try temporaryDirectory(named: "SafeRoots")
+      let home = root.appendingPathComponent("Home", isDirectory: true)
+      let coding = home.appendingPathComponent("Coding", isDirectory: true)
+      try FileManager.default.createDirectory(at: coding, withIntermediateDirectories: true)
+      let config = DiscoveryConfiguration.default(
+        homeDirectory: home, projectRoot: URL(fileURLWithPath: "/"))
+      return config.scanRoots == [coding.standardizedFileURL]
+        && config.enableFSEventsWatcher
+    }
+
     check("MCP JSON parser finds servers and risk", failures: &failures) {
       let servers = MCPConfigParser().parse(url: fixture("MCP/mcp.json"))
       return servers.count == 2
@@ -108,6 +119,34 @@ enum DiscoverySelfTest {
         && result.mcpServers.contains { $0.name == "fixture" }
     }
 
+    check("Keyword scanner keeps configured root as workspace", failures: &failures) {
+      let root = try temporaryDirectory(named: "KeywordWorkspace")
+      let nested = root.appendingPathComponent("nested/project", isDirectory: true)
+      try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+      try write(
+        "agent tool call mcpServers",
+        to: nested.appendingPathComponent("AGENTS.md"))
+      let config = DiscoveryConfiguration(
+        homeDirectory: root.deletingLastPathComponent(),
+        projectRoot: root,
+        scanRoots: [root],
+        limits: ScanLimits(
+          maxDepth: 4, maxFileBytes: 64 * 1024, maxDirectoryEntries: 64,
+          maxScannedDirectories: 16, maxInspectedFiles: 16, maxCollectedMemoryFiles: 8),
+        enableColdStartScan: true,
+        enableRuntimeObserver: false,
+        enableFSEventsWatcher: false,
+        enableEndpointSecurityMonitor: false,
+        enableNetworkMonitor: false,
+        enableUserApplicationSupportScan: false
+      )
+      let result = KeywordFileScanner(
+        config: config, skillScanner: SkillScanner(), memoryScanner: MemoryFileScanner()
+      ).scan()
+      return result.contextFiles.first?.workspace == root.path
+        && result.agents.first?.workspacePaths == [root.path]
+    }
+
     check("Keyword scanner respects skip directories and budgets", failures: &failures) {
       let root = try temporaryDirectory(named: "KeywordBudget")
       try write("agent tool call mcpServers", to: root.appendingPathComponent("AGENTS.md"))
@@ -148,6 +187,23 @@ enum DiscoverySelfTest {
         && result.mcpServers.contains { $0.name == "codex-home" }
         && result.skills.contains { $0.path.contains(".claude/skills/home-skill") }
         && result.skills.contains { $0.path.contains(".openclaw/skills/claw-skill") }
+    }
+
+    check("Known scanner detects Aider wildcard and relative memory path", failures: &failures) {
+      let root = try temporaryDirectory(named: "Aider")
+      let home = root.appendingPathComponent("Home", isDirectory: true)
+      let project = root.appendingPathComponent("Project", isDirectory: true)
+      try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+      try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+      let history = project.appendingPathComponent(".aider.chat.history.md")
+      try write("# Aider chat history\n\nuser: use agent tools", to: history)
+
+      let result = try knownScan(home: home, project: project)
+      return result.agents.contains {
+        $0.normalizedName == "aider"
+          && $0.cachePaths.contains(history.path)
+          && $0.memoryPaths.contains(history.path)
+      } && result.memories.contains { $0.path == history.path }
     }
 
     check("Application Support scan is explicit opt-in", failures: &failures) {
@@ -225,6 +281,13 @@ enum DiscoverySelfTest {
         ))
       return result.score >= 60
         && (result.state == .agentCandidate || result.state == .confirmedAgent)
+    }
+
+    check("Discovery sanitizes raw secret-looking arguments", failures: &failures) {
+      let syntheticSecret = "sk-" + String(repeating: "x", count: 32)
+      return DiscoveryUtilities.sanitizeArgument(
+        "--api-base https://example.invalid --token \(syntheticSecret)")
+        == "<redacted-sensitive-argument>"
     }
 
     check("Process inspector maps known process fingerprints", failures: &failures) {
@@ -378,6 +441,26 @@ enum DiscoverySelfTest {
       let reloaded = try AssetGraphStore(database: FrostDatabase(url: dbURL)).loadSnapshot()
       return snapshot.agents.count == 1 && snapshot.agents[0].confidence == 80
         && reloaded.lastScannedAt != nil
+    }
+
+    check("AssetGraphStore does not treat runtime-only data as cold scan", failures: &failures) {
+      let dbURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString)
+        .appendingPathComponent("FrostADR.sqlite")
+      let store = try AssetGraphStore(database: FrostDatabase(url: dbURL))
+      var result = DiscoveryScanResult()
+      result.runtimeProcesses = [
+        RuntimeProcessAsset(
+          pid: 9001,
+          ppid: 1,
+          processName: "custom-agent",
+          executablePath: "/usr/local/bin/custom-agent",
+          agentCandidateScore: 50)
+      ]
+      let snapshot = try store.merge(result)
+      let reloaded = try AssetGraphStore(database: FrostDatabase(url: dbURL)).loadSnapshot()
+      return snapshot.lastColdStartScannedAt == nil
+        && reloaded.lastColdStartScannedAt == nil
     }
 
     check("AssetGraphStore exports JSONL records", failures: &failures) {

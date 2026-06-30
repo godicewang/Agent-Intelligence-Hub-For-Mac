@@ -39,45 +39,47 @@ final class KnownAgentScanner {
 
       for path in fingerprint.installPaths {
         guard !isExpired(deadline) else { break }
-        let url = expanded(path)
-        guard shouldAccess(url) else { continue }
-        if DiscoveryUtilities.fileExists(url) || DiscoveryUtilities.directoryExists(url) {
-          installPaths.append(url.path)
-          confidence += fingerprint.confidenceWeights.installPath
-          evidence.append(
-            evidenceRecord(
-              .knownPath, fingerprint: fingerprint, path: url.path,
-              delta: fingerprint.confidenceWeights.installPath, summary: "Known install path exists"
-            ))
+        for url in expandedCandidates(path) where shouldAccess(url) {
+          if DiscoveryUtilities.fileExists(url) || DiscoveryUtilities.directoryExists(url) {
+            installPaths.append(url.path)
+            confidence += fingerprint.confidenceWeights.installPath
+            evidence.append(
+              evidenceRecord(
+                .knownPath, fingerprint: fingerprint, path: url.path,
+                delta: fingerprint.confidenceWeights.installPath,
+                summary: "Known install path exists"
+              ))
+          }
         }
       }
 
       for path in fingerprint.configPaths {
         guard !isExpired(deadline) else { break }
-        let url = expanded(path)
-        guard shouldAccess(url) else { continue }
-        if DiscoveryUtilities.fileExists(url) {
-          configPaths.append(url.path)
-          confidence += fingerprint.confidenceWeights.configPath
-          evidence.append(
-            evidenceRecord(
-              .config, fingerprint: fingerprint, path: url.path,
-              delta: fingerprint.confidenceWeights.configPath, summary: "Known config path exists"))
+        for url in expandedCandidates(path) where shouldAccess(url) {
+          if DiscoveryUtilities.fileExists(url) {
+            configPaths.append(url.path)
+            confidence += fingerprint.confidenceWeights.configPath
+            evidence.append(
+              evidenceRecord(
+                .config, fingerprint: fingerprint, path: url.path,
+                delta: fingerprint.confidenceWeights.configPath,
+                summary: "Known config path exists"))
+          }
         }
       }
 
       for path in fingerprint.mcpConfigPaths {
         guard !isExpired(deadline) else { break }
-        let url = expanded(path)
-        guard shouldAccess(url) else { continue }
-        if DiscoveryUtilities.fileExists(url) {
-          mcpConfigPaths.append(url.path)
-          confidence += fingerprint.confidenceWeights.mcpConfig
-          evidence.append(
-            evidenceRecord(
-              .mcpConfig, fingerprint: fingerprint, path: url.path,
-              delta: fingerprint.confidenceWeights.mcpConfig,
-              summary: "MCP-capable config path exists"))
+        for url in expandedCandidates(path) where shouldAccess(url) {
+          if DiscoveryUtilities.fileExists(url) {
+            mcpConfigPaths.append(url.path)
+            confidence += fingerprint.confidenceWeights.mcpConfig
+            evidence.append(
+              evidenceRecord(
+                .mcpConfig, fingerprint: fingerprint, path: url.path,
+                delta: fingerprint.confidenceWeights.mcpConfig,
+                summary: "MCP-capable config path exists"))
+          }
         }
       }
 
@@ -96,29 +98,29 @@ final class KnownAgentScanner {
 
       for path in fingerprint.cachePaths {
         guard !isExpired(deadline) else { break }
-        let url = expanded(path)
-        guard shouldAccess(url) else { continue }
-        if DiscoveryUtilities.fileExists(url) || DiscoveryUtilities.directoryExists(url) {
-          cachePaths.append(url.path)
-          confidence += fingerprint.confidenceWeights.cache
-          evidence.append(
-            evidenceRecord(
-              .knownPath, fingerprint: fingerprint, path: url.path,
-              delta: fingerprint.confidenceWeights.cache, summary: "Cache path exists"))
+        for url in expandedCandidates(path) where shouldAccess(url) {
+          if DiscoveryUtilities.fileExists(url) || DiscoveryUtilities.directoryExists(url) {
+            cachePaths.append(url.path)
+            confidence += fingerprint.confidenceWeights.cache
+            evidence.append(
+              evidenceRecord(
+                .knownPath, fingerprint: fingerprint, path: url.path,
+                delta: fingerprint.confidenceWeights.cache, summary: "Cache path exists"))
+          }
         }
       }
 
       for path in fingerprint.memoryPaths {
         guard !isExpired(deadline) else { break }
-        let url = expanded(path)
-        guard shouldAccess(url) else { continue }
-        if DiscoveryUtilities.fileExists(url) || DiscoveryUtilities.directoryExists(url) {
-          memoryPaths.append(url.path)
-          confidence += fingerprint.confidenceWeights.memory
-          evidence.append(
-            evidenceRecord(
-              .memoryFile, fingerprint: fingerprint, path: url.path,
-              delta: fingerprint.confidenceWeights.memory, summary: "Memory/cache path exists"))
+        for url in expandedCandidates(path) where shouldAccess(url) {
+          if DiscoveryUtilities.fileExists(url) || DiscoveryUtilities.directoryExists(url) {
+            memoryPaths.append(url.path)
+            confidence += fingerprint.confidenceWeights.memory
+            evidence.append(
+              evidenceRecord(
+                .memoryFile, fingerprint: fingerprint, path: url.path,
+                delta: fingerprint.confidenceWeights.memory, summary: "Memory/cache path exists"))
+          }
         }
       }
 
@@ -126,10 +128,7 @@ final class KnownAgentScanner {
         guard !isExpired(deadline) else { break }
         for marker in fingerprint.projectMarkers {
           guard !isExpired(deadline) else { break }
-          let markerURL = root.appendingPathComponent(marker)
-          if DiscoveryUtilities.fileExists(markerURL)
-            || DiscoveryUtilities.directoryExists(markerURL)
-          {
+          for markerURL in matchingMarkerURLs(marker, in: root) {
             workspacePaths.append(root.path)
             confidence += fingerprint.confidenceWeights.projectMarker
             evidence.append(
@@ -217,6 +216,50 @@ final class KnownAgentScanner {
       return [expanded(path)]
     }
     return config.scanRoots.map { $0.appendingPathComponent(path) }
+  }
+
+  private func matchingMarkerURLs(_ marker: String, in root: URL) -> [URL] {
+    if marker.contains("*") {
+      return wildcardMarkerURLs(marker, in: root)
+    }
+
+    let url = root.appendingPathComponent(marker)
+    if DiscoveryUtilities.fileExists(url) || DiscoveryUtilities.directoryExists(url) {
+      return [url]
+    }
+    return []
+  }
+
+  private func wildcardMarkerURLs(_ marker: String, in root: URL) -> [URL] {
+    let directoryPart: String
+    let pattern: String
+    if let slash = marker.lastIndex(of: "/") {
+      directoryPart = String(marker[..<slash])
+      pattern = String(marker[marker.index(after: slash)...])
+    } else {
+      directoryPart = ""
+      pattern = marker
+    }
+    let baseDirectory =
+      directoryPart.isEmpty ? root : root.appendingPathComponent(directoryPart, isDirectory: true)
+    guard DiscoveryUtilities.directoryExists(baseDirectory),
+      let names = try? FileManager.default.contentsOfDirectory(atPath: baseDirectory.path)
+    else {
+      return []
+    }
+
+    return names.prefix(config.limits.maxDirectoryEntries)
+      .filter { wildcardMatches(pattern: pattern, value: $0) }
+      .map { baseDirectory.appendingPathComponent($0) }
+      .filter { DiscoveryUtilities.fileExists($0) || DiscoveryUtilities.directoryExists($0) }
+  }
+
+  private func wildcardMatches(pattern: String, value: String) -> Bool {
+    let regex =
+      "^"
+      + NSRegularExpression.escapedPattern(for: pattern)
+      .replacingOccurrences(of: "\\*", with: ".*") + "$"
+    return value.range(of: regex, options: .regularExpression) != nil
   }
 
   private func shouldAccess(_ url: URL) -> Bool {

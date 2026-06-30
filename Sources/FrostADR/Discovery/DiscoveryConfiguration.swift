@@ -18,8 +18,14 @@ struct DiscoveryConfiguration: Codable, Hashable {
   ) -> DiscoveryConfiguration {
     let normalizedProjectRoot = projectRoot.standardizedFileURL
     var roots: [URL] = []
-    if isSafeAutomaticWorkspaceRoot(normalizedProjectRoot, homeDirectory: homeDirectory) {
-      roots.append(normalizedProjectRoot)
+    let candidates =
+      ([normalizedProjectRoot] + automaticWorkspaceRoots(homeDirectory: homeDirectory))
+      .map { $0.standardizedFileURL }
+
+    for candidate in candidates {
+      if isSafeAutomaticWorkspaceRoot(candidate, homeDirectory: homeDirectory) {
+        roots.append(candidate)
+      }
     }
     roots = roots.map { $0.standardizedFileURL }.uniqueSorted()
     return DiscoveryConfiguration(
@@ -72,5 +78,17 @@ struct DiscoveryConfiguration: Codable, Hashable {
 
     return path.hasPrefix(homePath + "/") || path.hasPrefix("/tmp/")
       || path.hasPrefix("/private/tmp/")
+  }
+
+  private static func automaticWorkspaceRoots(homeDirectory: URL) -> [URL] {
+    [
+      "Coding",
+      "Code",
+      "Developer",
+      "Projects",
+      "Workspace",
+      "Workspaces",
+      "src",
+    ].map { homeDirectory.appendingPathComponent($0, isDirectory: true) }
   }
 }

@@ -83,7 +83,7 @@ struct AgentScanView: View {
   }
 
   private var statusLine: String {
-    if let lastScannedAt = viewModel.snapshot.lastScannedAt {
+    if let lastScannedAt = viewModel.snapshot.lastColdStartScannedAt {
       return
         "最近构建：\(lastScannedAt.formatted(date: .abbreviated, time: .standard))。启动时直接加载本地画像，需要刷新时手动重新构建。"
     }
@@ -91,7 +91,7 @@ struct AgentScanView: View {
   }
 
   private var headerTitle: String {
-    viewModel.snapshot.lastScannedAt == nil ? "等待构建本机Agent画像" : "本机Agent画像已加载"
+    viewModel.snapshot.lastColdStartScannedAt == nil ? "等待构建本机Agent画像" : "本机Agent画像已加载"
   }
 
   private var summaryGrid: some View {

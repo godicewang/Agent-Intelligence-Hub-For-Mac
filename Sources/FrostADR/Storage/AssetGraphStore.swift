@@ -78,7 +78,15 @@ final class AssetGraphStore {
         $0.capability.rawValue
       }
       snapshot.events = mergeByKey(snapshot.events + result.events) { $0.id.uuidString }
-      snapshot.lastScannedAt = result.scannedAt
+      if result.hasColdStartTerminalEvent {
+        snapshot.lastScannedAt = result.scannedAt
+      } else {
+        snapshot.lastScannedAt = latestScanTime(
+          agents: snapshot.agents, mcpServers: snapshot.mcpServers, skills: snapshot.skills,
+          contextFiles: snapshot.contextFiles, memories: snapshot.memories,
+          runtimeProcesses: snapshot.runtimeProcesses, evidence: snapshot.evidence,
+          events: snapshot.events)
+      }
 
       try persist(snapshot)
       return snapshot
@@ -158,7 +166,14 @@ final class AssetGraphStore {
     evidence: [DiscoveryEvidence],
     events: [DiscoveryEvent]
   ) -> Date? {
-    (events.map(\.createdAt)
+    if let coldStartScan = events.filter({
+      $0.kind == .coldStartScan && $0.isColdStartTerminalEvent
+    }).map(\.createdAt).max() {
+      return coldStartScan
+    }
+
+    return
+      (events.map(\.createdAt)
       + agents.map(\.lastScannedAt)
       + mcpServers.map(\.discoveredAt)
       + skills.map(\.discoveredAt)

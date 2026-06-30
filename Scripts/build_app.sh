@@ -76,6 +76,10 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$ROOT_DIR/Packaging/FrostADR-Info.plist" "$CONTENTS_DIR/Info.plist"
 cp "$EXECUTABLE" "$MACOS_DIR/$APP_NAME"
 chmod +x "$MACOS_DIR/$APP_NAME"
+RESOURCE_BUNDLE="$BIN_DIR/${APP_NAME}_${APP_NAME}.bundle"
+if [[ -d "$RESOURCE_BUNDLE" ]]; then
+  cp -R "$RESOURCE_BUNDLE" "$APP_DIR/"
+fi
 printf 'APPL????' > "$CONTENTS_DIR/PkgInfo"
 
 echo "Built $APP_DIR"

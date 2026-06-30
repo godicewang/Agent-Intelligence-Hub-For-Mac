@@ -241,6 +241,14 @@ struct DiscoverySnapshot: Codable, Hashable {
   static let empty = DiscoverySnapshot()
 }
 
+extension DiscoverySnapshot {
+  var lastColdStartScannedAt: Date? {
+    events.filter { $0.kind == .coldStartScan && $0.isColdStartTerminalEvent }
+      .map(\.createdAt)
+      .max()
+  }
+}
+
 struct DiscoveryScanResult: Codable, Hashable {
   var agents: [AgentAsset] = []
   var mcpServers: [MCPServerAsset] = []
@@ -252,4 +260,18 @@ struct DiscoveryScanResult: Codable, Hashable {
   var permissionStates: [DiscoveryPermissionState] = []
   var events: [DiscoveryEvent] = []
   var scannedAt: Date = Date()
+}
+
+extension DiscoveryScanResult {
+  var hasColdStartTerminalEvent: Bool {
+    events.contains { $0.kind == .coldStartScan && $0.isColdStartTerminalEvent }
+  }
+}
+
+extension DiscoveryEvent {
+  var isColdStartTerminalEvent: Bool {
+    let lower = message.lowercased()
+    return lower.contains("completed") || lower.contains("stopped")
+      || lower.contains("exceeded")
+  }
 }

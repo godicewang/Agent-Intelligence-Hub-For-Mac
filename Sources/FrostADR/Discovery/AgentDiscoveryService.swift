@@ -55,7 +55,7 @@ final class AgentDiscoveryService: ObservableObject {
   }
 
   func start() async {
-    if scanner.isColdStartEnabled && snapshot.lastScannedAt == nil {
+    if scanner.isColdStartEnabled && snapshot.lastColdStartScannedAt == nil {
       await runColdStartScan()
     }
     let states = runtimeObserver.start { [weak self] snapshot in
@@ -104,7 +104,7 @@ final class AgentDiscoveryService: ObservableObject {
 
   private func runScannerInBackground() async -> DiscoveryScanResult {
     let scanner = self.scanner
-    let timeout = configuration.limits.maxScanSeconds + 2
+    let timeout = max(1, configuration.limits.maxScanSeconds + 2)
     return await withCheckedContinuation { continuation in
       let box = ScanContinuationBox(continuation)
       DispatchQueue.global(qos: .userInitiated).async {

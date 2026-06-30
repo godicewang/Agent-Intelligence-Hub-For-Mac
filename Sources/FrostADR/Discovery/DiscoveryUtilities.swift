@@ -4,6 +4,8 @@ import Foundation
 enum DiscoveryUtilities {
   static let sensitiveKeyPattern =
     "(?i)(api[_-]?key|token|password|passwd|secret|private[_-]?key|credential|cookie)"
+  static let sensitiveValuePattern =
+    #"(?i)(sk-[a-z0-9_-]{16,}|xox[baprs]-[a-z0-9-]{16,}|akia[0-9a-z]{12,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)"#
 
   static func expandedPath(
     _ path: String, home: URL = FileManager.default.homeDirectoryForCurrentUser
@@ -58,7 +60,9 @@ enum DiscoveryUtilities {
   }
 
   static func sanitizeArgument(_ value: String) -> String {
-    if value.range(of: sensitiveKeyPattern, options: .regularExpression) != nil {
+    if value.range(of: sensitiveKeyPattern, options: .regularExpression) != nil
+      || value.range(of: sensitiveValuePattern, options: .regularExpression) != nil
+    {
       return "<redacted-sensitive-argument>"
     }
     if value.count > 180 {

@@ -46,13 +46,14 @@ final class KeywordFileScanner {
 
     for root in roots where DiscoveryUtilities.directoryExists(root) {
       guard budget.canVisitDirectory(config.limits) else { break }
-      walk(root, depth: 0, budget: &budget, result: &result)
+      walk(root, workspaceRoot: root, depth: 0, budget: &budget, result: &result)
     }
     return result
   }
 
   private func walk(
-    _ directory: URL, depth: Int, budget: inout ScanBudget, result: inout DiscoveryScanResult
+    _ directory: URL, workspaceRoot: URL, depth: Int, budget: inout ScanBudget,
+    result: inout DiscoveryScanResult
   ) {
     guard depth <= config.limits.maxDepth, budget.canVisitDirectory(config.limits) else { return }
     budget.visitedDirectories += 1
@@ -78,10 +79,10 @@ final class KeywordFileScanner {
       var isDirectory: ObjCBool = false
       FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
       if isDirectory.boolValue {
-        walk(url, depth: depth + 1, budget: &budget, result: &result)
+        walk(url, workspaceRoot: workspaceRoot, depth: depth + 1, budget: &budget, result: &result)
       } else if shouldInspect(url), budget.canInspectFile(config.limits) {
         budget.inspectedFiles += 1
-        inspect(url, workspace: directory, deadline: budget.deadline, result: &result)
+        inspect(url, workspace: workspaceRoot, deadline: budget.deadline, result: &result)
       }
     }
   }
