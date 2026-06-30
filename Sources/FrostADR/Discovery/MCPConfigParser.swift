@@ -85,7 +85,7 @@ final class MCPConfigParser {
     if let dict = object as? [String: Any] {
       var matches: [[String: Any]] = []
       for (key, value) in dict {
-        if ["mcpServers", "mcp_servers", "servers"].contains(key),
+        if ["mcpServers", "mcp_servers"].contains(key),
           let servers = value as? [String: Any]
         {
           matches.append(servers)
@@ -154,9 +154,10 @@ final class MCPConfigParser {
 
   private func risk(command: String?, args: [String], envKeyNames: [String]) -> Int {
     let joined = ([command ?? ""] + args).joined(separator: " ").lowercased()
+    let commandName = command.map { URL(fileURLWithPath: $0).lastPathComponent.lowercased() }
     var score = 0
-    if command == "npx", !args.contains(where: { $0.contains("@") }) { score += 30 }
-    if command == "uvx" { score += 25 }
+    if commandName == "npx", !args.contains(where: { $0.contains("@") }) { score += 30 }
+    if commandName == "uvx" { score += 25 }
     if joined.contains("curl") && joined.contains("bash") { score += 45 }
     if joined.contains("python -c") || joined.contains("node -e") { score += 30 }
     if joined.contains("osascript") { score += 35 }

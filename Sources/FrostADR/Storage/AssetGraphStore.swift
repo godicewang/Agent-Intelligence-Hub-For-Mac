@@ -111,7 +111,8 @@ final class AssetGraphStore {
     try append(snapshot.events, kind: "event", to: &lines)
     try FileManager.default.createDirectory(
       at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+    let output = lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n"
+    try output.write(to: url, atomically: true, encoding: .utf8)
   }
 
   private func persist(_ snapshot: DiscoverySnapshot) throws {

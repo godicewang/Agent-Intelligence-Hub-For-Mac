@@ -24,7 +24,7 @@ FrostADR 是一款面向 macOS Apple Silicon 的端上 Agent Detection & Respons
 Scripts/run_discovery_tests.sh
 ```
 
-该脚本会执行 Agent Discovery 自检、构建 `dist/FrostADR.app`、确认指纹资源已随 app 打包，并使用打包后的 app 再运行一次自检。当前自检覆盖 MCP 配置识别、常见 Agent 指纹、工作区扫描、冷启动画像替换、JSONL 导出完整性和最小权限边界。
+该脚本会执行 Agent Discovery 自检、构建 `dist/FrostADR.app`、确认指纹资源已随 app 打包，并使用打包后的 app 再运行一次自检。当前自检覆盖 MCP 配置识别与误报控制、常见 Agent 指纹、工作区扫描、发现来源标记、冷启动画像替换、JSONL 导出完整性和最小权限边界。
 
 ## 启动 macOS App
 

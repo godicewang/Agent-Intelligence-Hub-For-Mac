@@ -121,6 +121,40 @@ enum DiscoverySelfTest {
       return MCPConfigParser().parse(url: config).isEmpty
     }
 
+    check("MCP parser ignores generic URL server maps", failures: &failures) {
+      let root = try temporaryDirectory(named: "MCPGenericServers")
+      let config = root.appendingPathComponent("settings.json")
+      try write(
+        """
+        {
+          "servers": {
+            "api": {
+              "url": "https://example.invalid/api"
+            }
+          }
+        }
+        """, to: config)
+      return MCPConfigParser().parse(url: config).isEmpty
+    }
+
+    check("MCP parser scores path-based npx commands", failures: &failures) {
+      let root = try temporaryDirectory(named: "MCPPathCommand")
+      let config = root.appendingPathComponent("mcp.json")
+      try write(
+        """
+        {
+          "mcpServers": {
+            "path-npx": {
+              "command": "/opt/homebrew/bin/npx",
+              "args": ["unversioned-server"]
+            }
+          }
+        }
+        """, to: config)
+      let servers = MCPConfigParser().parse(url: config)
+      return servers.count == 1 && servers[0].riskPreScore >= 30
+    }
+
     check("Skill scanner finds Layer 1 signals", failures: &failures) {
       let skills = SkillScanner().scan(directory: fixture("Skill"))
       return skills.count == 1 && skills[0].hasScripts && skills[0].hasExternalURLs
@@ -221,6 +255,25 @@ enum DiscoverySelfTest {
           && $0.cachePaths.contains(history.path)
           && $0.memoryPaths.contains(history.path)
       } && result.memories.contains { $0.path == history.path }
+    }
+
+    check("Known scanner records only observed discovery methods", failures: &failures) {
+      let root = try temporaryDirectory(named: "DiscoveryMethods")
+      let home = root.appendingPathComponent("Home", isDirectory: true)
+      let project = root.appendingPathComponent("Project", isDirectory: true)
+      try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+      try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+      try write("# Agent Context", to: project.appendingPathComponent("AGENTS.md"))
+
+      let result = try knownScan(home: home, project: project)
+      guard
+        let candidate = result.agents.first(where: {
+          $0.normalizedName == "unknown-terminal-agent-candidate"
+        })
+      else {
+        return false
+      }
+      return candidate.discoveryMethods == [.workspaceScan]
     }
 
     check("Application Support scan is explicit opt-in", failures: &failures) {
@@ -563,6 +616,7 @@ enum DiscoverySelfTest {
         && text.contains(#""path":"\/tmp\/FrostADR\/AGENTS.md""#)
         && text.contains(#""kind":"permissionState""#)
         && text.contains(#""kind":"event""#)
+        && text.hasSuffix("\n")
     }
 
     if failures.isEmpty {

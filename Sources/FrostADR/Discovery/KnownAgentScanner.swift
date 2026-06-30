@@ -148,7 +148,7 @@ final class KnownAgentScanner {
         agentType: fingerprint.agentType,
         vendor: fingerprint.vendor,
         confidence: confidence,
-        discoveryMethods: [.knownPath, .configSchema, .workspaceScan],
+        discoveryMethods: discoveryMethods(for: evidence),
         discoveryEvidenceIds: evidence.map(\.id),
         scopes: scopes(paths: installPaths + configPaths + workspacePaths),
         installPaths: installPaths,
@@ -281,6 +281,33 @@ final class KnownAgentScanner {
       summary: summary,
       rawKey: URL(fileURLWithPath: path).lastPathComponent
     )
+  }
+
+  private func discoveryMethods(for evidence: [DiscoveryEvidence]) -> [DiscoveryMethod] {
+    evidence.flatMap { item -> [DiscoveryMethod] in
+      switch item.evidenceType {
+      case .knownPath:
+        [.knownPath]
+      case .config:
+        [.configSchema]
+      case .mcpConfig:
+        [.mcpConfigParse]
+      case .skill:
+        [.skillScan]
+      case .contextFile:
+        [.workspaceScan]
+      case .memoryFile:
+        [.memoryScan]
+      case .process:
+        [.processFingerprint]
+      case .keyword:
+        [.keywordScan]
+      case .behavior:
+        [.behaviorFingerprint]
+      case .permission:
+        []
+      }
+    }.uniqueSorted()
   }
 
   private func scopes(paths: [String]) -> [DiscoveryScope] {
