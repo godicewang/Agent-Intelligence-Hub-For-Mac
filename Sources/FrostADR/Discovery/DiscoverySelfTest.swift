@@ -1,7 +1,12 @@
 import Foundation
 
 enum DiscoverySelfTest {
+  private static let temporaryDirectoryRegistry = SelfTestTemporaryDirectoryRegistry()
+
   static func run() -> Int32 {
+    defer {
+      temporaryDirectoryRegistry.cleanup()
+    }
     var failures: [String] = []
 
     check("FingerprintRegistry loads Claude and Codex", failures: &failures) {
@@ -158,6 +163,21 @@ enum DiscoverySelfTest {
     check("Skill scanner finds Layer 1 signals", failures: &failures) {
       let skills = SkillScanner().scan(directory: fixture("Skill"))
       return skills.count == 1 && skills[0].hasScripts && skills[0].hasExternalURLs
+    }
+
+    check("Skill scanner inspects script contents", failures: &failures) {
+      let root = try temporaryDirectory(named: "SkillScriptContent")
+      let skill = root.appendingPathComponent("scripted", isDirectory: true)
+      try write(
+        "# Quiet Skill\n\nNo external URL in markdown.",
+        to: skill.appendingPathComponent("SKILL.md"))
+      try write(
+        "curl https://example.invalid/install.sh # token access",
+        to: skill.appendingPathComponent("install.sh"))
+      let skills = SkillScanner().scan(directory: root)
+      guard let asset = skills.first else { return false }
+      return asset.hasScripts && asset.hasExternalURLs && asset.hasSensitivePermissionHints
+        && asset.riskLevel == .medium
     }
 
     check("Keyword scanner finds context and MCP config", failures: &failures) {
@@ -650,6 +670,7 @@ enum DiscoverySelfTest {
     let url = FileManager.default.temporaryDirectory
       .appendingPathComponent("FrostADRDiscoverySelfTest-\(name)-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    temporaryDirectoryRegistry.append(url)
     return url
   }
 
@@ -670,11 +691,8 @@ enum DiscoverySelfTest {
 
   private static func preparedCodexProject() throws -> URL {
     let source = fixture("CodexProject")
-    let destination = FileManager.default.temporaryDirectory
-      .appendingPathComponent("FrostADRDiscoverySelfTest-\(UUID().uuidString)", isDirectory: true)
+    let destination = try temporaryDirectory(named: "CodexProject")
       .appendingPathComponent("CodexProject", isDirectory: true)
-    try FileManager.default.createDirectory(
-      at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
     try FileManager.default.copyItem(at: source, to: destination)
 
     let ignoredAgentFile = destination.appendingPathComponent("AGENTS.md")
@@ -755,5 +773,27 @@ enum DiscoverySelfTest {
       memoryScanner: MemoryFileScanner(limits: config.limits),
       config: config
     ).scan()
+  }
+}
+
+private final class SelfTestTemporaryDirectoryRegistry: @unchecked Sendable {
+  private let lock = NSLock()
+  private var directories: [URL] = []
+
+  func append(_ url: URL) {
+    lock.lock()
+    directories.append(url)
+    lock.unlock()
+  }
+
+  func cleanup() {
+    lock.lock()
+    let directories = directories
+    self.directories.removeAll()
+    lock.unlock()
+
+    for url in directories where url.lastPathComponent.hasPrefix("FrostADRDiscoverySelfTest-") {
+      try? FileManager.default.removeItem(at: url)
+    }
   }
 }

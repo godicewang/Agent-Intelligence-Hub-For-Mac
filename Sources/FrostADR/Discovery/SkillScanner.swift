@@ -2,6 +2,13 @@ import Foundation
 
 final class SkillScanner {
   private let limits: ScanLimits
+  private let scriptExtensions: Set<String> = ["sh", "bash", "py", "js", "ts", "rb", "pl", "zsh"]
+  private let textFileExtensions: Set<String> = [
+    "bash", "env", "json", "js", "md", "py", "rb", "sh", "toml", "ts", "txt", "yaml", "yml", "zsh",
+  ]
+  private let textFileNames: Set<String> = [
+    "Dockerfile", "Makefile", "package.json", "requirements.txt", "setup.py", "install.sh",
+  ]
 
   init(limits: ScanLimits = ScanLimits()) {
     self.limits = limits
@@ -30,7 +37,8 @@ final class SkillScanner {
   private func asset(skillDirectory: URL, skillMarkdown: URL, sourceAgentId: UUID?) -> SkillAsset {
     let text =
       DiscoveryUtilities.readSmallTextFile(skillMarkdown, maxBytes: limits.maxFileBytes) ?? ""
-    let lower = text.lowercased()
+    let lower = scanTextBundle(skillDirectory: skillDirectory, skillMarkdown: skillMarkdown)
+      .lowercased()
     let hasScripts =
       containsScriptFile(in: skillDirectory) || lower.contains("```bash") || lower.contains("```sh")
     let hasExternalURLs = lower.range(of: #"https?://"#, options: .regularExpression) != nil
@@ -86,7 +94,6 @@ final class SkillScanner {
   }
 
   private func containsScriptFile(in directory: URL) -> Bool {
-    let scriptExtensions: Set<String> = ["sh", "bash", "py", "js", "ts", "rb", "pl", "zsh"]
     var found = false
     var budget = SkillScanBudget()
     walk(directory, depth: 0, budget: &budget) { url in
@@ -95,6 +102,38 @@ final class SkillScanner {
       }
     }
     return found
+  }
+
+  private func scanTextBundle(skillDirectory: URL, skillMarkdown: URL) -> String {
+    var chunks: [String] = []
+    var inspectedTextFiles = 0
+    var collectedBytes = 0
+    let maxTextFiles = min(limits.maxInspectedFiles, 64)
+    let maxTotalBytes = min(limits.maxFileBytes * 4, 512 * 1024)
+    var budget = SkillScanBudget()
+
+    walk(skillDirectory, depth: 0, budget: &budget) { url in
+      guard inspectedTextFiles < maxTextFiles, collectedBytes < maxTotalBytes else { return }
+      guard shouldReadTextForSignals(url) else { return }
+      let fileSize = Int(DiscoveryUtilities.fileSize(url))
+      guard fileSize <= limits.maxFileBytes else { return }
+      guard let text = DiscoveryUtilities.readSmallTextFile(url, maxBytes: limits.maxFileBytes)
+      else {
+        return
+      }
+      inspectedTextFiles += 1
+      collectedBytes += min(fileSize, limits.maxFileBytes)
+      let relativeName =
+        url == skillMarkdown ? "SKILL.md" : url.lastPathComponent
+      chunks.append("\n# \(relativeName)\n\(text)")
+    }
+    return chunks.joined(separator: "\n")
+  }
+
+  private func shouldReadTextForSignals(_ url: URL) -> Bool {
+    if url.lastPathComponent == "SKILL.md" { return true }
+    if textFileNames.contains(url.lastPathComponent) { return true }
+    return textFileExtensions.contains(url.pathExtension.lowercased())
   }
 
   private func description(from text: String) -> String? {
