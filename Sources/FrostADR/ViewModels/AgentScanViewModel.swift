@@ -71,7 +71,24 @@ final class AgentScanViewModel: ObservableObject {
       errorMessage = "未找到可打开的 Agent 根目录。"
       return
     }
+    errorMessage = nil
     NSWorkspace.shared.open(url)
+  }
+
+  func openPath(_ path: String) {
+    let url = URL(fileURLWithPath: path)
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+      errorMessage = "路径不存在或暂时无法访问：\(path)"
+      return
+    }
+
+    errorMessage = nil
+    if isDirectory.boolValue {
+      NSWorkspace.shared.open(url)
+    } else {
+      NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
   }
 
   private func bind(from service: AgentDiscoveryService) {

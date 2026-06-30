@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct AgentScanView: View {
@@ -299,6 +300,7 @@ struct AgentScanView: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .pointingHandCursor()
     .help("打开 Agent 根目录")
   }
 
@@ -319,13 +321,17 @@ struct AgentScanView: View {
         VStack(spacing: 0) {
           tableHeader(["名称", "Transport", "Command", "Risk", "Inspection"])
           ForEach(viewModel.snapshot.mcpServers) { server in
-            row([
-              server.name,
-              server.transport.rawValue,
-              server.command ?? "-",
-              "\(server.riskPreScore)",
-              server.inspectionStatus.rawValue,
-            ])
+            clickableRow(
+              [
+                server.name,
+                server.transport.rawValue,
+                server.command ?? "-",
+                "\(server.riskPreScore)",
+                server.inspectionStatus.rawValue,
+              ], help: "打开 MCP 配置位置"
+            ) {
+              viewModel.openPath(server.configPath)
+            }
           }
         }
       }
@@ -341,13 +347,17 @@ struct AgentScanView: View {
         VStack(spacing: 0) {
           tableHeader(["名称", "脚本", "外部 URL", "安装指令", "风险"])
           ForEach(viewModel.snapshot.skills) { skill in
-            row([
-              skill.name,
-              skill.hasScripts ? "yes" : "no",
-              skill.hasExternalURLs ? "yes" : "no",
-              skill.hasInstallInstructions ? "yes" : "no",
-              skill.riskLevel.rawValue,
-            ])
+            clickableRow(
+              [
+                skill.name,
+                skill.hasScripts ? "yes" : "no",
+                skill.hasExternalURLs ? "yes" : "no",
+                skill.hasInstallInstructions ? "yes" : "no",
+                skill.riskLevel.rawValue,
+              ], help: "打开 Skill 目录"
+            ) {
+              viewModel.openPath(skill.path)
+            }
           }
         }
       }
@@ -364,10 +374,18 @@ struct AgentScanView: View {
         VStack(spacing: 0) {
           tableHeader(["类型", "路径", "摘要"])
           ForEach(viewModel.snapshot.contextFiles) { item in
-            row(["Context", item.path, item.keywordHits.prefix(4).joined(separator: ", ")])
+            clickableRow(
+              [
+                "Context", item.path, item.keywordHits.prefix(4).joined(separator: ", "),
+              ], help: "打开上下文文件位置"
+            ) {
+              viewModel.openPath(item.path)
+            }
           }
           ForEach(viewModel.snapshot.memories) { item in
-            row(["Memory", item.path, item.format.rawValue])
+            clickableRow(["Memory", item.path, item.format.rawValue], help: "打开 Memory 文件位置") {
+              viewModel.openPath(item.path)
+            }
           }
         }
       }
@@ -515,6 +533,22 @@ struct AgentScanView: View {
   }
 
   private func row(_ columns: [String]) -> some View {
+    rowContent(columns)
+  }
+
+  private func clickableRow(
+    _ columns: [String], help: String, action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      rowContent(columns)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .pointingHandCursor()
+    .help(help)
+  }
+
+  private func rowContent(_ columns: [String]) -> some View {
     VStack(spacing: 0) {
       HStack(spacing: 0) {
         ForEach(Array(columns.enumerated()), id: \.offset) { _, value in
@@ -621,6 +655,38 @@ struct AgentScanView: View {
     case .high, .critical:
       .critical
     }
+  }
+}
+
+private struct PointingHandCursorModifier: ViewModifier {
+  @State private var isHovering = false
+
+  func body(content: Content) -> some View {
+    content
+      .onHover { hovering in
+        if hovering {
+          guard !isHovering else { return }
+          NSCursor.pointingHand.push()
+          isHovering = true
+        } else {
+          popIfNeeded()
+        }
+      }
+      .onDisappear {
+        popIfNeeded()
+      }
+  }
+
+  private func popIfNeeded() {
+    guard isHovering else { return }
+    NSCursor.pop()
+    isHovering = false
+  }
+}
+
+extension View {
+  fileprivate func pointingHandCursor() -> some View {
+    modifier(PointingHandCursorModifier())
   }
 }
 
