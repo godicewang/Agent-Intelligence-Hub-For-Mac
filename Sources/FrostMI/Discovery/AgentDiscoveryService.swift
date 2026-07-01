@@ -90,7 +90,7 @@ final class AgentDiscoveryService: ObservableObject {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
           "Library/Application Support")
-      let url = directory.appendingPathComponent("FrostMI", isDirectory: true)
+      let url = directory.appendingPathComponent("FrostADR", isDirectory: true)
         .appendingPathComponent("discovery-export.jsonl")
       try store.exportJSONL(to: url)
       lastExportURL = url

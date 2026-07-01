@@ -59,6 +59,11 @@ enum DiscoverySelfTest {
         && config.enableFSEventsWatcher
     }
 
+    check("Default store remains compatible with FrostADR Runtime cache", failures: &failures) {
+      let url = FrostDatabase.defaultURL()
+      return url.path.hasSuffix("Library/Application Support/FrostADR/FrostADR.sqlite")
+    }
+
     check(
       "Discovery path resolver opens files and falls back to existing parents", failures: &failures
     ) {
@@ -520,7 +525,7 @@ enum DiscoverySelfTest {
     check("AssetGraphStore persists and merges", failures: &failures) {
       let dbURL = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString)
-        .appendingPathComponent("FrostMI.sqlite")
+        .appendingPathComponent("FrostADR.sqlite")
       let store = try AssetGraphStore(database: FrostDatabase(url: dbURL))
       var first = DiscoveryScanResult()
       first.agents = [
@@ -553,7 +558,7 @@ enum DiscoverySelfTest {
     check("AssetGraphStore does not treat runtime-only data as cold scan", failures: &failures) {
       let dbURL = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString)
-        .appendingPathComponent("FrostMI.sqlite")
+        .appendingPathComponent("FrostADR.sqlite")
       let store = try AssetGraphStore(database: FrostDatabase(url: dbURL))
       var result = DiscoveryScanResult()
       result.runtimeProcesses = [
@@ -573,7 +578,7 @@ enum DiscoverySelfTest {
     check("AssetGraphStore does not treat UI timeout as completed cold scan", failures: &failures) {
       let dbURL = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString)
-        .appendingPathComponent("FrostMI.sqlite")
+        .appendingPathComponent("FrostADR.sqlite")
       let store = try AssetGraphStore(database: FrostDatabase(url: dbURL))
       var result = DiscoveryScanResult()
       result.events = [
@@ -591,7 +596,7 @@ enum DiscoverySelfTest {
     check("AssetGraphStore replaces stale cold-start assets", failures: &failures) {
       let dbURL = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString)
-        .appendingPathComponent("FrostMI.sqlite")
+        .appendingPathComponent("FrostADR.sqlite")
       let store = try AssetGraphStore(database: FrostDatabase(url: dbURL))
 
       var first = DiscoveryScanResult()
@@ -626,12 +631,12 @@ enum DiscoverySelfTest {
     check("AssetGraphStore exports JSONL records", failures: &failures) {
       let dbURL = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString)
-        .appendingPathComponent("FrostMI.sqlite")
+        .appendingPathComponent("FrostADR.sqlite")
       let store = try AssetGraphStore(database: FrostDatabase(url: dbURL))
       var result = DiscoveryScanResult()
       result.contextFiles = [
         ContextFileAsset(
-          path: "/tmp/FrostMI/AGENTS.md",
+          path: "/tmp/FrostADR/AGENTS.md",
           detectedAgent: "Agent Context",
           keywordHits: ["agent"],
           hash: "fixture-hash")
@@ -650,7 +655,7 @@ enum DiscoverySelfTest {
       try store.exportJSONL(to: exportURL)
       let text = try String(contentsOf: exportURL, encoding: .utf8)
       return text.contains(#""kind":"contextFile""#)
-        && text.contains(#""path":"\/tmp\/FrostMI\/AGENTS.md""#)
+        && text.contains(#""path":"\/tmp\/FrostADR\/AGENTS.md""#)
         && text.contains(#""kind":"permissionState""#)
         && text.contains(#""kind":"event""#)
         && text.hasSuffix("\n")
