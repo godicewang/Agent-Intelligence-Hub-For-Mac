@@ -39,7 +39,7 @@ FrostADR explores an endpoint-native security layer for this new surface:
 - Skill discovery and lightweight pre-scan signals.
 - Context and Memory metadata discovery.
 - Clickable metrics for quick navigation between modules.
-- Paginated long lists for large Skill / Context / Memory inventories.
+- Fixed 10-row pagination across inventory and runtime status modules.
 - Finder path reveal for Agent, MCP, Skill, Context, and Memory assets.
 - Local JSONL export with Finder reveal.
 - Default local-first, no-exec, minimum-permission discovery flow.

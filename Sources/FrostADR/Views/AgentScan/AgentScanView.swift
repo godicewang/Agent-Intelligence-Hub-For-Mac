@@ -20,8 +20,9 @@ struct AgentScanView: View {
   @State private var skillPage = 0
   @State private var contextPage = 0
   @State private var memoryPage = 0
+  @State private var permissionPage = 0
 
-  private let pageSize = 20
+  private let pageSize = 10
 
   var body: some View {
     ScrollViewReader { scrollProxy in
@@ -44,7 +45,7 @@ struct AgentScanView: View {
 
   private var header: some View {
     FrostCard("Agent Discovery", subtitle: "Cold start scan + runtime observation") {
-      HStack(alignment: .center, spacing: 14) {
+      HStack(alignment: .top, spacing: 16) {
         ZStack {
           RoundedRectangle(cornerRadius: 8, style: .continuous)
             .fill(FrostTheme.accent.opacity(0.13))
@@ -59,35 +60,47 @@ struct AgentScanView: View {
         }
         .frame(width: 48, height: 48)
 
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 8) {
           Text(viewModel.isScanning ? "正在构建本机Agent画像" : headerTitle)
-            .font(.system(size: 16, weight: .bold))
+            .font(.system(size: 17, weight: .bold))
 
           Text(statusLine)
             .font(.system(size: 12))
             .foregroundStyle(FrostTheme.mutedText)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+
+          HStack(spacing: 7) {
+            StatusBadge(label: "Local Endpoint", tone: .info)
+            StatusBadge(label: "No-Exec Scan", tone: .healthy)
+            StatusBadge(label: "Page Size 10", tone: .neutral)
+          }
         }
 
         Spacer()
 
-        if viewModel.isScanning {
-          ProgressView()
-            .controlSize(.small)
-        }
+        HStack(spacing: 10) {
+          if viewModel.isScanning {
+            ProgressView()
+              .controlSize(.small)
+          }
 
-        Button {
-          viewModel.exportJSONL()
-        } label: {
-          Label("导出 JSONL", systemImage: "square.and.arrow.down")
-        }
-        .disabled(viewModel.isScanning)
+          Button {
+            viewModel.exportJSONL()
+          } label: {
+            Label("导出 JSONL", systemImage: "square.and.arrow.down")
+          }
+          .disabled(viewModel.isScanning)
 
-        Button {
-          viewModel.rescan()
-        } label: {
-          Label("重新构建画像", systemImage: "arrow.clockwise")
+          Button {
+            viewModel.rescan()
+          } label: {
+            Label("重新构建画像", systemImage: "arrow.clockwise")
+          }
+          .buttonStyle(.borderedProminent)
+          .tint(FrostTheme.accent)
+          .disabled(viewModel.isScanning)
         }
-        .disabled(viewModel.isScanning)
       }
 
       if let error = viewModel.errorMessage {
@@ -114,11 +127,11 @@ struct AgentScanView: View {
   }
 
   private func summaryGrid(_ scrollProxy: ScrollViewProxy) -> some View {
-    LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 14)], spacing: 14) {
+    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 14) {
       metric(
         "Agents",
         value: viewModel.snapshot.agents.count,
-        icon: "laptopcomputer.and.magnifyingglass",
+        icon: "scope",
         section: .agents,
         scrollProxy: scrollProxy
       )
@@ -172,20 +185,56 @@ struct AgentScanView: View {
         scrollProxy.scrollTo(section, anchor: .top)
       }
     } label: {
-      FrostCard(title) {
-        HStack(spacing: 12) {
-          Image(systemName: icon)
-            .font(.system(size: 18, weight: .semibold))
-            .foregroundStyle(FrostTheme.accent)
-            .frame(width: 26)
+      VStack(alignment: .leading, spacing: 13) {
+        HStack(alignment: .center, spacing: 10) {
+          ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+              .fill(FrostTheme.accent.opacity(0.12))
+            Image(systemName: icon)
+              .font(.system(size: 15, weight: .semibold))
+              .foregroundStyle(FrostTheme.accent)
+          }
+          .frame(width: 32, height: 32)
+
+          Spacer(minLength: 0)
+
+          Image(systemName: "arrow.down.right.circle")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(FrostTheme.mutedText.opacity(0.72))
+        }
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text(title)
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(FrostTheme.mutedText)
+            .textCase(.uppercase)
 
           Text("\(value)")
-            .font(.system(size: 26, weight: .bold))
+            .font(.system(size: 30, weight: .bold))
+            .monospacedDigit()
 
-          Spacer()
+          Text("点击定位模块")
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(FrostTheme.mutedText.opacity(0.84))
         }
-        .frame(minHeight: 48)
       }
+      .padding(15)
+      .frame(maxWidth: .infinity, minHeight: 124, alignment: .leading)
+      .background(
+        RoundedRectangle(cornerRadius: FrostTheme.radius, style: .continuous)
+          .fill(FrostTheme.elevatedCardBackground)
+      )
+      .overlay(alignment: .top) {
+        Rectangle()
+          .fill(FrostTheme.accent.opacity(0.52))
+          .frame(height: 2)
+      }
+      .overlay(
+        RoundedRectangle(cornerRadius: FrostTheme.radius, style: .continuous)
+          .stroke(FrostTheme.border, lineWidth: 1)
+      )
+      .clipShape(RoundedRectangle(cornerRadius: FrostTheme.radius, style: .continuous))
+      .shadow(color: FrostTheme.shadow.opacity(0.76), radius: 12, x: 0, y: 4)
     }
     .buttonStyle(.plain)
     .pointingHandCursor()
@@ -198,8 +247,8 @@ struct AgentScanView: View {
 
   @ViewBuilder
   private var content: some View {
-    FrostDetailLayout(detailWidth: 360) {
-      VStack(alignment: .leading, spacing: 16) {
+    FrostDetailLayout(detailWidth: 380) {
+      VStack(alignment: .leading, spacing: 18) {
         if isDiscoveryEmpty && !viewModel.isScanning {
           emptyOverview
         } else {
@@ -214,7 +263,7 @@ struct AgentScanView: View {
         }
       }
     } detail: {
-      VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: 18) {
         scanScopeSection
         selectedAgentSection
         runtimeSection
@@ -308,7 +357,7 @@ struct AgentScanView: View {
           message: "已发现低置信度常见 Agent，可点击右上角显示。",
           systemImage: "line.3.horizontal.decrease.circle", compact: true)
       } else {
-        VStack(spacing: 0) {
+        tableSurface {
           tableHeader(["名称", "类型", "状态", "MCP", "Skill", "置信度", "风险"])
           ForEach(visibleAgents) { agent in
             agentRow(agent)
@@ -330,7 +379,7 @@ struct AgentScanView: View {
           message: "没有发现通过行为指纹或上下文文件识别出的本机自研 Agent。",
           systemImage: "terminal", compact: true)
       } else {
-        VStack(spacing: 0) {
+        tableSurface {
           tableHeader(["名称", "类型", "状态", "MCP", "Skill", "置信度", "风险"])
           ForEach(visibleAgents) { agent in
             agentRow(agent)
@@ -375,7 +424,11 @@ struct AgentScanView: View {
   }
 
   private var mcpSkillGrid: some View {
-    HStack(alignment: .top, spacing: 16) {
+    LazyVGrid(
+      columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)],
+      alignment: .leading,
+      spacing: 16
+    ) {
       mcpSection
         .id(AgentScanSection.mcp)
       skillSection
@@ -392,7 +445,7 @@ struct AgentScanView: View {
           title: "暂无 MCP Server", message: "未发现真实 MCP 配置。", systemImage: "puzzlepiece.extension",
           compact: true)
       } else {
-        VStack(spacing: 0) {
+        tableSurface {
           tableHeader(["名称", "Transport", "Command", "Risk", "Inspection"])
           ForEach(visibleServers) { server in
             clickableRow(
@@ -421,7 +474,7 @@ struct AgentScanView: View {
         EmptyStateView(
           title: "暂无 Skill", message: "未发现真实 Skill 目录。", systemImage: "terminal", compact: true)
       } else {
-        VStack(spacing: 0) {
+        tableSurface {
           tableHeader(["名称", "脚本", "外部 URL", "安装指令", "风险"])
           ForEach(visibleSkills) { skill in
             clickableRow(
@@ -451,7 +504,7 @@ struct AgentScanView: View {
           title: "暂无上下文文件", message: "未发现 AGENTS.md、CLAUDE.md、rules 或 settings 文件。",
           systemImage: "doc.text", compact: true)
       } else {
-        VStack(spacing: 0) {
+        tableSurface {
           tableHeader(["类型", "路径", "摘要"])
           ForEach(visibleFiles) { item in
             clickableRow(
@@ -479,7 +532,7 @@ struct AgentScanView: View {
           title: "暂无 Memory 文件", message: "未发现 session、cache 或 memory 文件。",
           systemImage: "externaldrive", compact: true)
       } else {
-        VStack(spacing: 0) {
+        tableSurface {
           tableHeader(["类型", "路径", "格式"])
           ForEach(visibleMemories) { item in
             clickableRow(["Memory", item.path, item.format.rawValue], help: "打开 Memory 文件位置") {
@@ -494,18 +547,25 @@ struct AgentScanView: View {
   }
 
   private var permissionSection: some View {
-    FrostCard("Permission / Runtime Status", subtitle: "真实权限和运行时观察状态") {
-      VStack(spacing: 0) {
-        tableHeader(["能力", "状态", "说明"])
-        ForEach(viewModel.snapshot.permissionStates) { state in
-          row([state.capability.rawValue, state.status.rawValue, state.message])
-        }
-        if viewModel.snapshot.permissionStates.isEmpty {
-          EmptyStateView(
-            title: "暂无额外权限请求",
-            message:
-              "默认轻量发现不会主动请求 Full Disk Access、App Data、Endpoint Security 或 Network Extension 权限。",
-            systemImage: "lock.shield", compact: true)
+    let visiblePermissionStates = pageItems(
+      viewModel.snapshot.permissionStates, page: permissionPage)
+
+    return FrostCard("Permission / Runtime Status", subtitle: "真实权限和运行时观察状态") {
+      if viewModel.snapshot.permissionStates.isEmpty {
+        EmptyStateView(
+          title: "暂无额外权限请求",
+          message:
+            "默认轻量发现不会主动请求 Full Disk Access、App Data、Endpoint Security 或 Network Extension 权限。",
+          systemImage: "lock.shield", compact: true)
+      } else {
+        tableSurface {
+          tableHeader(["能力", "状态", "说明"])
+          ForEach(visiblePermissionStates) { state in
+            row([state.capability.rawValue, state.status.rawValue, state.message])
+          }
+          paginationFooter(
+            total: viewModel.snapshot.permissionStates.count, page: $permissionPage,
+            label: "Permission")
         }
       }
     }
@@ -636,12 +696,12 @@ struct AgentScanView: View {
 
   @ViewBuilder
   private func paginationFooter(total: Int, page: Binding<Int>, label: String) -> some View {
-    if total > pageSize {
+    if total > 0 {
       let currentPage = safePage(page.wrappedValue, total: total)
       let pages = pageCount(total: total)
 
       HStack(spacing: 10) {
-        Text("第 \(currentPage + 1) / \(pages) 页 · 共 \(total) \(label)")
+        Text("每页 \(pageSize) 条 · 第 \(currentPage + 1) / \(pages) 页 · 共 \(total) \(label)")
           .font(.system(size: 11, weight: .medium))
           .foregroundStyle(FrostTheme.mutedText)
 
@@ -651,6 +711,7 @@ struct AgentScanView: View {
           page.wrappedValue = max(0, currentPage - 1)
         } label: {
           Image(systemName: "chevron.left")
+            .frame(width: 22, height: 22)
         }
         .buttonStyle(.borderless)
         .disabled(currentPage == 0)
@@ -660,15 +721,31 @@ struct AgentScanView: View {
           page.wrappedValue = min(pages - 1, currentPage + 1)
         } label: {
           Image(systemName: "chevron.right")
+            .frame(width: 22, height: 22)
         }
         .buttonStyle(.borderless)
         .disabled(currentPage >= pages - 1)
         .help("下一页")
       }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 9)
-      .background(FrostTheme.tableRowBackground.opacity(0.55))
+      .padding(.horizontal, 12)
+      .padding(.vertical, 10)
+      .background(FrostTheme.tableHeaderBackground.opacity(0.68))
     }
+  }
+
+  private func tableSurface<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    VStack(spacing: 0) {
+      content()
+    }
+    .background(
+      RoundedRectangle(cornerRadius: FrostTheme.compactRadius, style: .continuous)
+        .fill(FrostTheme.moduleWellBackground)
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: FrostTheme.compactRadius, style: .continuous)
+        .stroke(FrostTheme.subtleBorder, lineWidth: 1)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: FrostTheme.compactRadius, style: .continuous))
   }
 
   private func tableHeader(_ columns: [String]) -> some View {
@@ -708,6 +785,7 @@ struct AgentScanView: View {
           rowText(value)
         }
       }
+      .background(FrostTheme.tableRowBackground.opacity(0.42))
       Divider()
     }
   }
