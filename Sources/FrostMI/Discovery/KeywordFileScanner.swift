@@ -39,10 +39,22 @@ final class KeywordFileScanner: @unchecked Sendable {
     self.memoryScanner = memoryScanner
   }
 
-  func scan(additionalRoots: [URL] = [], deadline: Date? = nil) -> DiscoveryScanResult {
+  func scan(
+    additionalRoots: [URL] = [],
+    additionalFiles: [URL] = [],
+    deadline: Date? = nil
+  ) -> DiscoveryScanResult {
     var result = DiscoveryScanResult()
     var budget = ScanBudget(deadline: deadline)
     let roots = (config.scanRoots + additionalRoots).map { $0.standardizedFileURL }.uniqueSorted()
+
+    for file in additionalFiles.map({ $0.standardizedFileURL }).uniqueSorted()
+    where shouldInspect(file) && budget.canInspectFile(config.limits) {
+      budget.inspectedFiles += 1
+      inspect(
+        file, workspace: file.deletingLastPathComponent(), deadline: budget.deadline,
+        result: &result)
+    }
 
     for root in roots where DiscoveryUtilities.directoryExists(root) {
       guard budget.canVisitDirectory(config.limits) else { break }
@@ -91,7 +103,15 @@ final class KeywordFileScanner: @unchecked Sendable {
     let name = url.lastPathComponent
     if targetFileNames.contains(name) { return true }
     if name.hasSuffix(".jsonl")
-      && (name.lowercased().contains("session") || name.lowercased().contains("conversation"))
+      && (name.lowercased().contains("session") || name.lowercased().contains("conversation")
+        || name.lowercased().contains("history"))
+    {
+      return true
+    }
+    if (name.hasSuffix(".sqlite") || name.hasSuffix(".db"))
+      && (name.lowercased().contains("memory") || name.lowercased().contains("session")
+        || name.lowercased().contains("conversation") || name.lowercased().contains("history")
+        || name.lowercased().contains("state"))
     {
       return true
     }
@@ -115,7 +135,8 @@ final class KeywordFileScanner: @unchecked Sendable {
     }
 
     if name.lowercased().contains("memory") || name.lowercased().contains("session")
-      || name.lowercased().contains("conversation")
+      || name.lowercased().contains("conversation") || name.lowercased().contains("history")
+      || name.lowercased().contains("state")
     {
       if let memory = memoryScanner.asset(url: url) {
         result.memories.append(memory)

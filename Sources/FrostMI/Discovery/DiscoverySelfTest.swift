@@ -100,6 +100,27 @@ enum DiscoverySelfTest {
         && servers.contains { $0.name == "http" && $0.transport == .http }
     }
 
+    check("MCP parser accepts flat and URL alias server maps", failures: &failures) {
+      let root = try temporaryDirectory(named: "MCPFlat")
+      let config = root.appendingPathComponent(".mcp.json")
+      try write(
+        """
+        {
+          "flat-http": {
+            "httpUrl": "https://example.invalid/mcp"
+          },
+          "flat-stdio": {
+            "command": "node",
+            "args": ["server.js"]
+          }
+        }
+        """, to: config)
+      let servers = MCPConfigParser().parse(url: config)
+      return servers.count == 2
+        && servers.contains { $0.name == "flat-http" && $0.transport == .http }
+        && servers.contains { $0.name == "flat-stdio" && $0.transport == .stdio }
+    }
+
     check("MCP parser blocks high-risk no-exec command", failures: &failures) {
       let root = try temporaryDirectory(named: "MCPRisk")
       let config = root.appendingPathComponent("mcp.json")
@@ -298,6 +319,7 @@ enum DiscoverySelfTest {
           $0.path == environment.home.appendingPathComponent(".gemini/GEMINI.md").path
         }
         && result.mcpServers.contains { $0.name == "cursor-home" }
+        && result.mcpServers.contains { $0.name == "codex-plugin" }
         && result.skills.contains { $0.path.contains(".cursor/skills-cursor/cursor-skill") }
         && result.memories.contains {
           $0.path == environment.home.appendingPathComponent(".codex/session_index.jsonl").path
@@ -800,6 +822,12 @@ enum DiscoverySelfTest {
     try write(
       "# Cursor Skill\n\nInspect workspace metadata.",
       to: home.appendingPathComponent(".cursor/skills-cursor/cursor-skill/SKILL.md"))
+    try write(
+      #"{"mcpServers":{"codex-plugin":{"command":"node","args":["plugin-server.js"]}}}"#,
+      to: home.appendingPathComponent(".codex/.tmp/plugins/plugins/example/.mcp.json"))
+    try write(
+      "# Plugin Context\n\nUse mcpServers only from installed plugin metadata.",
+      to: home.appendingPathComponent(".codex/.tmp/plugins/plugins/example/AGENTS.md"))
     try write(
       "# OpenClaw Skill\n\nUse a local tool.",
       to: home.appendingPathComponent(".openclaw/skills/claw-skill/SKILL.md"))

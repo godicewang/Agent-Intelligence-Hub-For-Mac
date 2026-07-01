@@ -85,13 +85,16 @@ final class MCPConfigParser {
     if let dict = object as? [String: Any] {
       var matches: [[String: Any]] = []
       for (key, value) in dict {
-        if ["mcpServers", "mcp_servers"].contains(key),
+        if ["mcpServers", "mcp_servers", "mcp", "servers"].contains(key),
           let servers = value as? [String: Any]
         {
           matches.append(servers)
         } else {
           matches.append(contentsOf: recursiveMCPServerMaps(in: value))
         }
+      }
+      if looksLikeFlatServerMap(dict) {
+        matches.append(dict)
       }
       return matches
     }
@@ -137,7 +140,8 @@ final class MCPConfigParser {
 
   private func isMCPServerConfig(_ config: [String: Any]) -> Bool {
     config["command"] is String
-      || config["url"] is String
+      || config["serverUrl"] is String
+      || config["httpUrl"] is String
       || config["transport"] is String
       || config["type"] is String
   }
@@ -147,9 +151,19 @@ final class MCPConfigParser {
     if raw == "sse" { return .sse }
     if raw == "http" { return .http }
     if raw == "streamable-http" || raw == "streamable_http" { return .streamableHttp }
-    if config["url"] != nil { return .http }
+    if config["url"] != nil || config["serverUrl"] != nil || config["httpUrl"] != nil {
+      return .http
+    }
     if config["command"] != nil { return .stdio }
     return .unknown
+  }
+
+  private func looksLikeFlatServerMap(_ dict: [String: Any]) -> Bool {
+    guard !dict.isEmpty else { return false }
+    return dict.values.allSatisfy { value in
+      guard let config = value as? [String: Any] else { return false }
+      return isMCPServerConfig(config)
+    }
   }
 
   private func risk(command: String?, args: [String], envKeyNames: [String]) -> Int {

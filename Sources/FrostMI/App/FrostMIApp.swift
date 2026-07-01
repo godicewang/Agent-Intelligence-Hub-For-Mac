@@ -6,6 +6,9 @@ struct FrostMIApp: App {
     if CommandLine.arguments.contains("--discovery-self-test") {
       Foundation.exit(DiscoverySelfTest.run())
     }
+    if CommandLine.arguments.contains("--discovery-print-summary") {
+      Foundation.exit(DiscoveryDiagnostics.printColdScanSummary())
+    }
   }
 
   var body: some Scene {

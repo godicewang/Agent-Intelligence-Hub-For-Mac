@@ -426,7 +426,10 @@ struct AgentScanView: View {
 
   private var mcpSkillGrid: some View {
     LazyVGrid(
-      columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)],
+      columns: [
+        GridItem(.flexible(), spacing: 16, alignment: .top),
+        GridItem(.flexible(), spacing: 16, alignment: .top),
+      ],
       alignment: .leading,
       spacing: 16
     ) {
