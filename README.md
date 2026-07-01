@@ -13,6 +13,7 @@ FrostADR 是一款面向 macOS Apple Silicon 的端上 Agent Detection & Respons
 - macOS SwiftUI 原生端上安全界面
 - 本机 Agent、MCP、Skill、上下文与 Memory 轻量发现
 - 常见 Agent 与本机自研 Agent 分组展示
+- 指标卡快速跳转、长列表分页和 Finder 路径定位
 - 本地 JSONL 导出与 Finder 定位
 - 默认本地优先、no-exec、最小权限的发现流程
 

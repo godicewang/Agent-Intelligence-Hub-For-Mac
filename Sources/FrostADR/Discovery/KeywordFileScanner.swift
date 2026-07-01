@@ -1,6 +1,6 @@
 import Foundation
 
-final class KeywordFileScanner {
+final class KeywordFileScanner: @unchecked Sendable {
   static let skipDirectoryNames: Set<String> = [
     ".git", "node_modules", "build", "dist", "DerivedData", "Library/Caches", "Caches",
     ".build", ".swiftpm", "__pycache__",

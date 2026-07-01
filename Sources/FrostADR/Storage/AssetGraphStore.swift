@@ -1,6 +1,6 @@
 import Foundation
 
-final class AssetGraphStore {
+final class AssetGraphStore: @unchecked Sendable {
   private let database: FrostDatabase
   private let lock = NSLock()
 

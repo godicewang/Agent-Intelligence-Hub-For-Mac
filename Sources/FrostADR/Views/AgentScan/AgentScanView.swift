@@ -1,22 +1,41 @@
 import AppKit
 import SwiftUI
 
+private enum AgentScanSection: Hashable {
+  case agents
+  case mcp
+  case skills
+  case context
+  case memory
+  case permissions
+}
+
 struct AgentScanView: View {
   @StateObject private var viewModel = AgentScanViewModel()
   @State private var selectedAgentID: UUID?
   @State private var showsLowConfidenceCommonAgents = false
+  @State private var commonAgentPage = 0
+  @State private var customAgentPage = 0
+  @State private var mcpPage = 0
+  @State private var skillPage = 0
+  @State private var contextPage = 0
+  @State private var memoryPage = 0
+
+  private let pageSize = 20
 
   var body: some View {
-    FrostPage {
-      PageHeader(
-        title: "Agent Scan",
-        subtitle: "本机 AI Agent、MCP、Skill、上下文文件和运行时候选的真实端上发现。",
-        path: "FrostADR / Agent Scan"
-      )
+    ScrollViewReader { scrollProxy in
+      FrostPage {
+        PageHeader(
+          title: "Agent Scan",
+          subtitle: "本机 AI Agent、MCP、Skill、上下文文件和运行时候选的真实端上发现。",
+          path: "FrostADR / Agent Scan"
+        )
 
-      header
-      summaryGrid
-      content
+        header
+        summaryGrid(scrollProxy)
+        content
+      }
     }
     .task {
       viewModel.startIfNeeded()
@@ -94,35 +113,83 @@ struct AgentScanView: View {
     viewModel.snapshot.lastColdStartScannedAt == nil ? "等待构建本机Agent画像" : "本机Agent画像已加载"
   }
 
-  private var summaryGrid: some View {
+  private func summaryGrid(_ scrollProxy: ScrollViewProxy) -> some View {
     LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 14)], spacing: 14) {
       metric(
-        "Agents", value: viewModel.snapshot.agents.count, icon: "laptopcomputer.and.magnifyingglass"
+        "Agents",
+        value: viewModel.snapshot.agents.count,
+        icon: "laptopcomputer.and.magnifyingglass",
+        section: .agents,
+        scrollProxy: scrollProxy
       )
-      metric("MCP", value: viewModel.snapshot.mcpServers.count, icon: "puzzlepiece.extension")
-      metric("Skills", value: viewModel.snapshot.skills.count, icon: "terminal")
       metric(
-        "Context", value: viewModel.snapshot.contextFiles.count, icon: "doc.text.magnifyingglass")
-      metric("Memory", value: viewModel.snapshot.memories.count, icon: "externaldrive")
-      metric("Permissions", value: restrictedPermissionCount, icon: "lock.shield")
+        "MCP",
+        value: viewModel.snapshot.mcpServers.count,
+        icon: "puzzlepiece.extension",
+        section: .mcp,
+        scrollProxy: scrollProxy
+      )
+      metric(
+        "Skills",
+        value: viewModel.snapshot.skills.count,
+        icon: "terminal",
+        section: .skills,
+        scrollProxy: scrollProxy
+      )
+      metric(
+        "Context",
+        value: viewModel.snapshot.contextFiles.count,
+        icon: "doc.text.magnifyingglass",
+        section: .context,
+        scrollProxy: scrollProxy
+      )
+      metric(
+        "Memory",
+        value: viewModel.snapshot.memories.count,
+        icon: "externaldrive",
+        section: .memory,
+        scrollProxy: scrollProxy
+      )
+      metric(
+        "Permissions",
+        value: restrictedPermissionCount,
+        icon: "lock.shield",
+        section: .permissions,
+        scrollProxy: scrollProxy
+      )
     }
   }
 
-  private func metric(_ title: String, value: Int, icon: String) -> some View {
-    FrostCard(title) {
-      HStack(spacing: 12) {
-        Image(systemName: icon)
-          .font(.system(size: 18, weight: .semibold))
-          .foregroundStyle(FrostTheme.accent)
-          .frame(width: 26)
-
-        Text("\(value)")
-          .font(.system(size: 26, weight: .bold))
-
-        Spacer()
+  private func metric(
+    _ title: String,
+    value: Int,
+    icon: String,
+    section: AgentScanSection,
+    scrollProxy: ScrollViewProxy
+  ) -> some View {
+    Button {
+      withAnimation(.easeInOut(duration: 0.22)) {
+        scrollProxy.scrollTo(section, anchor: .top)
       }
-      .frame(minHeight: 48)
+    } label: {
+      FrostCard(title) {
+        HStack(spacing: 12) {
+          Image(systemName: icon)
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(FrostTheme.accent)
+            .frame(width: 26)
+
+          Text("\(value)")
+            .font(.system(size: 26, weight: .bold))
+
+          Spacer()
+        }
+        .frame(minHeight: 48)
+      }
     }
+    .buttonStyle(.plain)
+    .pointingHandCursor()
+    .help("跳转到 \(title) 模块")
   }
 
   private var restrictedPermissionCount: Int {
@@ -137,9 +204,13 @@ struct AgentScanView: View {
           emptyOverview
         } else {
           commonAgentsSection
+            .id(AgentScanSection.agents)
           customAgentsSection
           mcpSkillGrid
-          contextSection
+          contextFilesSection
+            .id(AgentScanSection.context)
+          memorySection
+            .id(AgentScanSection.memory)
         }
       }
     } detail: {
@@ -148,6 +219,7 @@ struct AgentScanView: View {
         selectedAgentSection
         runtimeSection
         permissionSection
+          .id(AgentScanSection.permissions)
       }
     }
   }
@@ -207,7 +279,9 @@ struct AgentScanView: View {
   }
 
   private var commonAgentsSection: some View {
-    FrostCard("常见 Agent", subtitle: "Codex / Gemini / Cursor / Trae 等已知 Agent") {
+    let visibleAgents = pageItems(displayedCommonAgents, page: commonAgentPage)
+
+    return FrostCard("常见 Agent", subtitle: "Codex / Gemini / Cursor / Trae 等已知 Agent") {
       HStack {
         Text("默认仅展示置信度 >= 90 的常见 Agent")
           .font(.system(size: 11, weight: .medium))
@@ -236,16 +310,20 @@ struct AgentScanView: View {
       } else {
         VStack(spacing: 0) {
           tableHeader(["名称", "类型", "状态", "MCP", "Skill", "置信度", "风险"])
-          ForEach(displayedCommonAgents) { agent in
+          ForEach(visibleAgents) { agent in
             agentRow(agent)
           }
+          paginationFooter(
+            total: displayedCommonAgents.count, page: $commonAgentPage, label: "Agent")
         }
       }
     }
   }
 
   private var customAgentsSection: some View {
-    FrostCard("本机自研 Agent", subtitle: "未知 / 自定义终端 Agent 候选") {
+    let visibleAgents = pageItems(customAgents, page: customAgentPage)
+
+    return FrostCard("本机自研 Agent", subtitle: "未知 / 自定义终端 Agent 候选") {
       if customAgents.isEmpty {
         EmptyStateView(
           title: "暂无自研 Agent 候选",
@@ -254,9 +332,10 @@ struct AgentScanView: View {
       } else {
         VStack(spacing: 0) {
           tableHeader(["名称", "类型", "状态", "MCP", "Skill", "置信度", "风险"])
-          ForEach(customAgents) { agent in
+          ForEach(visibleAgents) { agent in
             agentRow(agent)
           }
+          paginationFooter(total: customAgents.count, page: $customAgentPage, label: "Agent")
         }
       }
     }
@@ -298,12 +377,16 @@ struct AgentScanView: View {
   private var mcpSkillGrid: some View {
     HStack(alignment: .top, spacing: 16) {
       mcpSection
+        .id(AgentScanSection.mcp)
       skillSection
+        .id(AgentScanSection.skills)
     }
   }
 
   private var mcpSection: some View {
-    FrostCard("MCP Servers", subtitle: "no-exec config discovery") {
+    let visibleServers = pageItems(viewModel.snapshot.mcpServers, page: mcpPage)
+
+    return FrostCard("MCP Servers", subtitle: "no-exec config discovery") {
       if viewModel.snapshot.mcpServers.isEmpty {
         EmptyStateView(
           title: "暂无 MCP Server", message: "未发现真实 MCP 配置。", systemImage: "puzzlepiece.extension",
@@ -311,7 +394,7 @@ struct AgentScanView: View {
       } else {
         VStack(spacing: 0) {
           tableHeader(["名称", "Transport", "Command", "Risk", "Inspection"])
-          ForEach(viewModel.snapshot.mcpServers) { server in
+          ForEach(visibleServers) { server in
             clickableRow(
               [
                 server.name,
@@ -324,20 +407,23 @@ struct AgentScanView: View {
               viewModel.openPath(server.configPath)
             }
           }
+          paginationFooter(total: viewModel.snapshot.mcpServers.count, page: $mcpPage, label: "MCP")
         }
       }
     }
   }
 
   private var skillSection: some View {
-    FrostCard("Skills", subtitle: "Layer 1 pre-scan") {
+    let visibleSkills = pageItems(viewModel.snapshot.skills, page: skillPage)
+
+    return FrostCard("Skills", subtitle: "Layer 1 pre-scan") {
       if viewModel.snapshot.skills.isEmpty {
         EmptyStateView(
           title: "暂无 Skill", message: "未发现真实 Skill 目录。", systemImage: "terminal", compact: true)
       } else {
         VStack(spacing: 0) {
           tableHeader(["名称", "脚本", "外部 URL", "安装指令", "风险"])
-          ForEach(viewModel.snapshot.skills) { skill in
+          ForEach(visibleSkills) { skill in
             clickableRow(
               [
                 skill.name,
@@ -347,24 +433,27 @@ struct AgentScanView: View {
                 skill.riskLevel.rawValue,
               ], help: "打开 Skill 目录"
             ) {
-              viewModel.openPath(skill.path)
+              viewModel.openDirectoryPath(skill.path)
             }
           }
+          paginationFooter(total: viewModel.snapshot.skills.count, page: $skillPage, label: "Skill")
         }
       }
     }
   }
 
-  private var contextSection: some View {
-    FrostCard("Context / Memory", subtitle: "上下文与记忆文件元数据") {
-      if viewModel.snapshot.contextFiles.isEmpty && viewModel.snapshot.memories.isEmpty {
+  private var contextFilesSection: some View {
+    let visibleFiles = pageItems(viewModel.snapshot.contextFiles, page: contextPage)
+
+    return FrostCard("Context Files", subtitle: "AGENTS.md / CLAUDE.md / rules / settings") {
+      if viewModel.snapshot.contextFiles.isEmpty {
         EmptyStateView(
-          title: "暂无上下文或记忆文件", message: "未发现 AGENTS.md、CLAUDE.md、session.jsonl 等文件。",
+          title: "暂无上下文文件", message: "未发现 AGENTS.md、CLAUDE.md、rules 或 settings 文件。",
           systemImage: "doc.text", compact: true)
       } else {
         VStack(spacing: 0) {
           tableHeader(["类型", "路径", "摘要"])
-          ForEach(viewModel.snapshot.contextFiles) { item in
+          ForEach(visibleFiles) { item in
             clickableRow(
               [
                 "Context", item.path, item.keywordHits.prefix(4).joined(separator: ", "),
@@ -373,11 +462,32 @@ struct AgentScanView: View {
               viewModel.openPath(item.path)
             }
           }
-          ForEach(viewModel.snapshot.memories) { item in
+          paginationFooter(
+            total: viewModel.snapshot.contextFiles.count, page: $contextPage, label: "Context"
+          )
+        }
+      }
+    }
+  }
+
+  private var memorySection: some View {
+    let visibleMemories = pageItems(viewModel.snapshot.memories, page: memoryPage)
+
+    return FrostCard("Memory", subtitle: "Session / cache / long-term memory metadata") {
+      if viewModel.snapshot.memories.isEmpty {
+        EmptyStateView(
+          title: "暂无 Memory 文件", message: "未发现 session、cache 或 memory 文件。",
+          systemImage: "externaldrive", compact: true)
+      } else {
+        VStack(spacing: 0) {
+          tableHeader(["类型", "路径", "格式"])
+          ForEach(visibleMemories) { item in
             clickableRow(["Memory", item.path, item.format.rawValue], help: "打开 Memory 文件位置") {
               viewModel.openPath(item.path)
             }
           }
+          paginationFooter(
+            total: viewModel.snapshot.memories.count, page: $memoryPage, label: "Memory")
         }
       }
     }
@@ -509,6 +619,58 @@ struct AgentScanView: View {
     }
   }
 
+  private func pageItems<T>(_ items: [T], page: Int) -> [T] {
+    guard !items.isEmpty else { return [] }
+    let currentPage = safePage(page, total: items.count)
+    let startIndex = currentPage * pageSize
+    return Array(items.dropFirst(startIndex).prefix(pageSize))
+  }
+
+  private func pageCount(total: Int) -> Int {
+    max(1, Int(ceil(Double(total) / Double(pageSize))))
+  }
+
+  private func safePage(_ page: Int, total: Int) -> Int {
+    min(max(page, 0), pageCount(total: total) - 1)
+  }
+
+  @ViewBuilder
+  private func paginationFooter(total: Int, page: Binding<Int>, label: String) -> some View {
+    if total > pageSize {
+      let currentPage = safePage(page.wrappedValue, total: total)
+      let pages = pageCount(total: total)
+
+      HStack(spacing: 10) {
+        Text("第 \(currentPage + 1) / \(pages) 页 · 共 \(total) \(label)")
+          .font(.system(size: 11, weight: .medium))
+          .foregroundStyle(FrostTheme.mutedText)
+
+        Spacer()
+
+        Button {
+          page.wrappedValue = max(0, currentPage - 1)
+        } label: {
+          Image(systemName: "chevron.left")
+        }
+        .buttonStyle(.borderless)
+        .disabled(currentPage == 0)
+        .help("上一页")
+
+        Button {
+          page.wrappedValue = min(pages - 1, currentPage + 1)
+        } label: {
+          Image(systemName: "chevron.right")
+        }
+        .buttonStyle(.borderless)
+        .disabled(currentPage >= pages - 1)
+        .help("下一页")
+      }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 9)
+      .background(FrostTheme.tableRowBackground.opacity(0.55))
+    }
+  }
+
   private func tableHeader(_ columns: [String]) -> some View {
     HStack(spacing: 0) {
       ForEach(columns, id: \.self) { column in
@@ -591,17 +753,24 @@ struct AgentScanView: View {
   }
 
   private func compactPath(_ path: String) -> some View {
-    Text(path)
-      .font(.system(size: 10.5, design: .monospaced))
-      .lineLimit(1)
-      .truncationMode(.middle)
-      .padding(.horizontal, 8)
-      .padding(.vertical, 5)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
-          .fill(FrostTheme.tableRowBackground)
-      )
+    Button {
+      viewModel.openPath(path)
+    } label: {
+      Text(path)
+        .font(.system(size: 10.5, design: .monospaced))
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+          RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(FrostTheme.tableRowBackground)
+        )
+    }
+    .buttonStyle(.plain)
+    .pointingHandCursor()
+    .help("打开路径位置")
   }
 
   private func mcpCount(for agent: AgentAsset) -> Int {
@@ -650,28 +819,15 @@ struct AgentScanView: View {
 }
 
 private struct PointingHandCursorModifier: ViewModifier {
-  @State private var isHovering = false
-
   func body(content: Content) -> some View {
     content
       .onHover { hovering in
         if hovering {
-          guard !isHovering else { return }
-          NSCursor.pointingHand.push()
-          isHovering = true
+          NSCursor.pointingHand.set()
         } else {
-          popIfNeeded()
+          NSCursor.arrow.set()
         }
       }
-      .onDisappear {
-        popIfNeeded()
-      }
-  }
-
-  private func popIfNeeded() {
-    guard isHovering else { return }
-    NSCursor.pop()
-    isHovering = false
   }
 }
 

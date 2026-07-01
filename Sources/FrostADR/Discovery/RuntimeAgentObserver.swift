@@ -1,6 +1,11 @@
 import Foundation
 
 final class RuntimeAgentObserver {
+  private static let fileSystemProcessingQueue = DispatchQueue(
+    label: "frostadr.fsevents.processing",
+    qos: .utility
+  )
+
   private let keywordScanner: KeywordFileScanner
   private let processInspector: ProcessInspector
   private let store: AssetGraphStore
@@ -36,7 +41,38 @@ final class RuntimeAgentObserver {
   private func startFileSystemWatcher(onUpdate: @escaping @MainActor (DiscoverySnapshot) -> Void)
     -> DiscoveryPermissionState
   {
-    let watcher = FSEventsWatcher { [keywordScanner, store] changedPaths in
+    let watcher = Self.makeFileSystemWatcher(
+      keywordScanner: keywordScanner,
+      store: store,
+      onUpdate: onUpdate
+    )
+    let state = watcher.start(paths: config.scanRoots)
+    runtimeWatcher = watcher
+    return state
+  }
+
+  private static func makeFileSystemWatcher(
+    keywordScanner: KeywordFileScanner,
+    store: AssetGraphStore,
+    onUpdate: @escaping @MainActor (DiscoverySnapshot) -> Void
+  ) -> FSEventsWatcher {
+    FSEventsWatcher { changedPaths in
+      processFileSystemChanges(
+        changedPaths: changedPaths,
+        keywordScanner: keywordScanner,
+        store: store,
+        onUpdate: onUpdate
+      )
+    }
+  }
+
+  private static func processFileSystemChanges(
+    changedPaths: [URL],
+    keywordScanner: KeywordFileScanner,
+    store: AssetGraphStore,
+    onUpdate: @escaping @MainActor (DiscoverySnapshot) -> Void
+  ) {
+    fileSystemProcessingQueue.async {
       let deadline = Date().addingTimeInterval(3)
       var result = DiscoveryScanResult()
       result.events.append(
@@ -60,9 +96,6 @@ final class RuntimeAgentObserver {
         }
       }
     }
-    let state = watcher.start(paths: config.scanRoots)
-    runtimeWatcher = watcher
-    return state
   }
 
   @MainActor

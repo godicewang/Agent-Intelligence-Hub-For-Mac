@@ -2,6 +2,61 @@ import AppKit
 import Combine
 import Foundation
 
+enum DiscoveryPathOpenTarget: Equatable {
+  case directory(URL)
+  case file(URL)
+}
+
+enum DiscoveryPathResolver {
+  static func target(
+    for rawPath: String, preferDirectory: Bool = false, fileManager: FileManager = .default
+  ) -> DiscoveryPathOpenTarget? {
+    let url = normalizedURL(rawPath)
+    var isDirectory: ObjCBool = false
+
+    if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) {
+      if isDirectory.boolValue {
+        let directory = url.pathExtension == "app" ? url.deletingLastPathComponent() : url
+        return .directory(directory.standardizedFileURL)
+      }
+
+      if preferDirectory {
+        return .directory(url.deletingLastPathComponent().standardizedFileURL)
+      }
+      return .file(url.standardizedFileURL)
+    }
+
+    guard let fallback = nearestExistingDirectory(from: url, fileManager: fileManager) else {
+      return nil
+    }
+    return .directory(fallback.standardizedFileURL)
+  }
+
+  private static func normalizedURL(_ rawPath: String) -> URL {
+    let expandedPath = (rawPath as NSString).expandingTildeInPath
+    return URL(fileURLWithPath: expandedPath).standardizedFileURL
+  }
+
+  private static func nearestExistingDirectory(from url: URL, fileManager: FileManager) -> URL? {
+    var candidate = url.deletingLastPathComponent()
+
+    while true {
+      var isDirectory: ObjCBool = false
+      if fileManager.fileExists(atPath: candidate.path, isDirectory: &isDirectory),
+        isDirectory.boolValue
+      {
+        return candidate
+      }
+
+      let parent = candidate.deletingLastPathComponent()
+      if parent.path == candidate.path {
+        return nil
+      }
+      candidate = parent
+    }
+  }
+}
+
 @MainActor
 final class AgentScanViewModel: ObservableObject {
   @Published var snapshot: DiscoverySnapshot = .empty
@@ -59,28 +114,51 @@ final class AgentScanViewModel: ObservableObject {
     bind(from: service)
   }
 
-  func openRootDirectory(for agent: AgentAsset) {
-    guard let url = rootURL(for: agent) else {
-      errorMessage = "未找到可打开的 Agent 根目录。"
-      return
+  @discardableResult
+  func openRootDirectory(for agent: AgentAsset) -> Bool {
+    for path in rootPathCandidates(for: agent) {
+      if openPath(path, preferDirectory: true, reportsMissingPath: false) {
+        return true
+      }
     }
-    errorMessage = nil
-    NSWorkspace.shared.open(url)
+
+    errorMessage = "未找到可打开的 Agent 根目录。"
+    return false
   }
 
-  func openPath(_ path: String) {
-    let url = URL(fileURLWithPath: path)
-    var isDirectory: ObjCBool = false
-    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
-      errorMessage = "路径不存在或暂时无法访问：\(path)"
-      return
+  @discardableResult
+  func openPath(_ path: String) -> Bool {
+    openPath(path, preferDirectory: false, reportsMissingPath: true)
+  }
+
+  @discardableResult
+  func openDirectoryPath(_ path: String) -> Bool {
+    openPath(path, preferDirectory: true, reportsMissingPath: true)
+  }
+
+  @discardableResult
+  private func openPath(
+    _ path: String, preferDirectory: Bool, reportsMissingPath: Bool
+  ) -> Bool {
+    guard let target = DiscoveryPathResolver.target(for: path, preferDirectory: preferDirectory)
+    else {
+      if reportsMissingPath {
+        errorMessage = "路径不存在或暂时无法访问：\(path)"
+      }
+      return false
     }
 
     errorMessage = nil
-    if isDirectory.boolValue {
-      NSWorkspace.shared.open(url)
-    } else {
+    switch target {
+    case .directory(let url):
+      let opened = NSWorkspace.shared.open(url)
+      if !opened {
+        errorMessage = "Finder 无法打开目录：\(url.path)"
+      }
+      return opened
+    case .file(let url):
       NSWorkspace.shared.activateFileViewerSelecting([url])
+      return true
     }
   }
 
@@ -90,32 +168,14 @@ final class AgentScanViewModel: ObservableObject {
     errorMessage = service.lastError
   }
 
-  private func rootURL(for agent: AgentAsset) -> URL? {
-    let candidates =
-      agent.workspacePaths.map(URL.init(fileURLWithPath:))
-      + agent.installPaths.map(URL.init(fileURLWithPath:))
-      + agent.configPaths.map(URL.init(fileURLWithPath:))
-      + agent.mcpConfigPaths.map(URL.init(fileURLWithPath:))
-      + agent.skillPaths.map(URL.init(fileURLWithPath:))
-      + agent.memoryPaths.map(URL.init(fileURLWithPath:))
-      + agent.executablePaths.map(URL.init(fileURLWithPath:))
-
-    for candidate in candidates {
-      if let directory = existingRootDirectory(for: candidate) {
-        return directory
-      }
-    }
-    return nil
+  private func rootPathCandidates(for agent: AgentAsset) -> [String] {
+    agent.workspacePaths
+      + agent.installPaths
+      + agent.configPaths
+      + agent.mcpConfigPaths
+      + agent.skillPaths
+      + agent.memoryPaths
+      + agent.executablePaths
   }
 
-  private func existingRootDirectory(for url: URL) -> URL? {
-    var isDirectory: ObjCBool = false
-    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
-      return nil
-    }
-    if isDirectory.boolValue {
-      return url.pathExtension == "app" ? url.deletingLastPathComponent() : url
-    }
-    return url.deletingLastPathComponent()
-  }
 }

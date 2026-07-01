@@ -59,6 +59,23 @@ enum DiscoverySelfTest {
         && config.enableFSEventsWatcher
     }
 
+    check(
+      "Discovery path resolver opens files and falls back to existing parents", failures: &failures
+    ) {
+      let root = try temporaryDirectory(named: "PathResolver")
+      let skill = root.appendingPathComponent("skills/local/SKILL.md")
+      try write("# Local Skill", to: skill)
+      let missingNestedFile = skill.deletingLastPathComponent()
+        .appendingPathComponent("deleted/cache/session.jsonl")
+
+      return DiscoveryPathResolver.target(for: skill.path, preferDirectory: false)
+        == .file(skill.standardizedFileURL)
+        && DiscoveryPathResolver.target(for: skill.path, preferDirectory: true)
+          == .directory(skill.deletingLastPathComponent().standardizedFileURL)
+        && DiscoveryPathResolver.target(for: missingNestedFile.path, preferDirectory: false)
+          == .directory(skill.deletingLastPathComponent().standardizedFileURL)
+    }
+
     check("MCP JSON parser finds servers and risk", failures: &failures) {
       let servers = MCPConfigParser().parse(url: fixture("MCP/mcp.json"))
       return servers.count == 2
