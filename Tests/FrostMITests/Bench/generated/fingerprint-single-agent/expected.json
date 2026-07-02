@@ -31,7 +31,16 @@
         "minCount": 1
       }
     ],
-    "skills": [],
+    "skills": [
+      {
+        "name": "generated-claude-skill",
+        "minCount": 1
+      },
+      {
+        "name": "generated-codex-skill",
+        "minCount": 1
+      }
+    ],
     "contextFiles": [
       {
         "pathSuffix": "project/AGENTS.md"

@@ -14,3 +14,21 @@ This bench keeps product data and test data sharply separated. Fixtures here are
 - `pressure/swe-agent/`: SWE-agent adapter area for stress and failure-trajectory tests.
 
 Every committed executable fixture should include an `expected.json` manifest.
+
+## Agent Discovery Commands
+
+Use the focused cold-start bench when changing Agent Sensing or static discovery behavior:
+
+```bash
+Scripts/run_cold_start_agent_bench.sh
+```
+
+It runs full cold-start discovery against `static/snyk/` and `generated/`, then reports fixture-level counts for agents, MCP servers, skills, context files, memory assets, and permission evidence.
+
+Use the full bench path when changing shared parser, scanner, packaging, fixture, or bench infrastructure:
+
+```bash
+Scripts/run_bench_tests.sh
+```
+
+The full bench regenerates fingerprint-derived fixtures, runs discovery self-tests, runs the cold-start Agent bench, and verifies packaged app resource loading.

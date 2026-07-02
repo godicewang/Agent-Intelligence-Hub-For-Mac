@@ -130,6 +130,14 @@ Scripts/run_discovery_tests.sh
 
 The script runs Agent Discovery self-tests, builds `dist/FrostMI.app`, verifies bundled fingerprint resources, and runs self-tests through the packaged app. Current checks cover MCP config detection and false-positive control, Codex plugin MCP discovery, known agent fingerprints, targeted home/support-directory discovery, workspace scanning, Skill script signals, discovery source markers, cold-start snapshot replacement, JSONL export integrity, path resolver behavior, minimum-permission boundaries, and manifest-driven bench fixtures.
 
+For a focused cold-start Agent discovery bench:
+
+```bash
+Scripts/run_cold_start_agent_bench.sh
+```
+
+This regenerates fingerprint-derived fixtures, runs the same full cold-start scanner path used by Agent Sensing, and prints per-fixture counts for agents, MCP servers, skills, context files, memory assets, and permission evidence. It uses `Tests/FrostMITests/Bench/static/snyk` and `Tests/FrostMITests/Bench/generated` because those datasets are purpose-built for static endpoint discovery.
+
 For the current full bench path:
 
 ```bash

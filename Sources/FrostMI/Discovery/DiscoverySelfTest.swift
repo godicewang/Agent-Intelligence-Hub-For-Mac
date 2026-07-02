@@ -813,6 +813,76 @@ enum DiscoverySelfTest {
     return 1
   }
 
+  static func runColdStartAgentBench() -> Int32 {
+    defer {
+      temporaryDirectoryRegistry.cleanup()
+    }
+
+    let manifestURLs = discoveryBenchManifestURLs()
+    guard !manifestURLs.isEmpty else {
+      print("FrostMI Cold Start Agent Bench failed: no discovery bench expected.json manifests found.")
+      return 1
+    }
+
+    let startedAt = Date()
+    var rows: [BenchColdStartRow] = []
+    for manifestURL in manifestURLs {
+      do {
+        let row = try withDiscoveryBenchWorkspace(manifestURL) { manifest, home, project in
+          let rowStartedAt = Date()
+          let result = try coldStartBenchScan(home: home, project: project)
+          let failures = benchValidationFailures(result: result, expected: manifest.expected)
+          return BenchColdStartRow(
+            id: manifest.id,
+            passed: failures.isEmpty,
+            elapsedSeconds: Date().timeIntervalSince(rowStartedAt),
+            agents: result.agents.count,
+            mcpServers: result.mcpServers.count,
+            skills: result.skills.count,
+            contextFiles: result.contextFiles.count,
+            memoryAssets: result.memories.count,
+            permissionEvidence: result.evidence.filter { $0.evidenceType == .permission }.count,
+            failures: failures)
+        }
+        rows.append(row)
+      } catch {
+        rows.append(
+          BenchColdStartRow(
+            id: manifestURL.deletingLastPathComponent().lastPathComponent,
+            passed: false,
+            elapsedSeconds: 0,
+            agents: 0,
+            mcpServers: 0,
+            skills: 0,
+            contextFiles: 0,
+            memoryAssets: 0,
+            permissionEvidence: 0,
+            failures: [error.localizedDescription]))
+      }
+    }
+
+    let passed = rows.filter(\.passed).count
+    let failed = rows.count - passed
+    let elapsed = Date().timeIntervalSince(startedAt)
+    print("FrostMI Cold Start Agent Bench")
+    print("dataset=Tests/FrostMITests/Bench/static/snyk + Tests/FrostMITests/Bench/generated")
+    print(
+      "fixtures=\(rows.count) passed=\(passed) failed=\(failed) elapsed=\(formatSeconds(elapsed))s"
+    )
+    print(
+      "totals agents=\(rows.map(\.agents).reduce(0, +)) mcp=\(rows.map(\.mcpServers).reduce(0, +)) skills=\(rows.map(\.skills).reduce(0, +)) context=\(rows.map(\.contextFiles).reduce(0, +)) memory=\(rows.map(\.memoryAssets).reduce(0, +)) permissionEvidence=\(rows.map(\.permissionEvidence).reduce(0, +))"
+    )
+    for row in rows {
+      print(
+        "- \(row.id) \(row.passed ? "PASS" : "FAIL") agents=\(row.agents) mcp=\(row.mcpServers) skills=\(row.skills) context=\(row.contextFiles) memory=\(row.memoryAssets) permissionEvidence=\(row.permissionEvidence) elapsed=\(formatSeconds(row.elapsedSeconds))s"
+      )
+      for failure in row.failures {
+        print("  ! \(failure)")
+      }
+    }
+    return failed == 0 ? 0 : 1
+  }
+
   private static func check(_ name: String, failures: inout [String], body: () throws -> Bool) {
     do {
       if try !body() {
@@ -898,36 +968,19 @@ enum DiscoverySelfTest {
   }
 
   private static func validateDiscoveryBenchManifest(_ manifestURL: URL) throws {
-    let manifest = try JSONDecoder.frost.decode(
-      BenchDiscoveryManifest.self, from: Data(contentsOf: manifestURL))
-    let sourceRoot = manifestURL.deletingLastPathComponent()
-    let workingRoot = try temporaryDirectory(named: "Bench-\(manifest.id)")
-      .appendingPathComponent(sourceRoot.lastPathComponent, isDirectory: true)
-    try FileManager.default.copyItem(at: sourceRoot, to: workingRoot)
-
-    let home = workingRoot.appendingPathComponent(manifest.scan.home, isDirectory: true)
-    let project = workingRoot.appendingPathComponent(manifest.scan.project, isDirectory: true)
-    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-
-    var protectedDirectories: [URL] = []
-    for relativePath in manifest.scan.protectedDirectories {
-      let url = workingRoot.appendingPathComponent(relativePath, isDirectory: true)
-      if DiscoveryUtilities.directoryExists(url) {
-        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: url.path)
-        protectedDirectories.append(url)
+    try withDiscoveryBenchWorkspace(manifestURL) { manifest, home, project in
+      let result = try discoveryBenchScan(home: home, project: project)
+      let failures = benchValidationFailures(result: result, expected: manifest.expected)
+      if !failures.isEmpty {
+        throw BenchValidationError(messages: failures)
       }
     }
-    defer {
-      for url in protectedDirectories {
-        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
-      }
-    }
+  }
 
-    let result = try discoveryBenchScan(home: home, project: project)
-    let expected = manifest.expected
+  private static func benchValidationFailures(
+    result: DiscoveryScanResult, expected: BenchExpectedSpec
+  ) -> [String] {
     var failures: [String] = []
-
     for agent in expected.agents {
       let matches = result.agents.filter { $0.normalizedName == agent.normalizedName }
       let minCount = agent.minCount ?? 1
@@ -983,10 +1036,40 @@ enum DiscoverySelfTest {
         "expected permission evidence >= \(expected.permissionEvidenceMinCount), got \(permissionEvidenceCount)"
       )
     }
+    return failures
+  }
 
-    if !failures.isEmpty {
-      throw BenchValidationError(messages: failures)
+  private static func withDiscoveryBenchWorkspace<T>(
+    _ manifestURL: URL,
+    body: (BenchDiscoveryManifest, URL, URL) throws -> T
+  ) throws -> T {
+    let manifest = try JSONDecoder.frost.decode(
+      BenchDiscoveryManifest.self, from: Data(contentsOf: manifestURL))
+    let sourceRoot = manifestURL.deletingLastPathComponent()
+    let workingRoot = try temporaryDirectory(named: "Bench-\(manifest.id)")
+      .appendingPathComponent(sourceRoot.lastPathComponent, isDirectory: true)
+    try FileManager.default.copyItem(at: sourceRoot, to: workingRoot)
+
+    let home = workingRoot.appendingPathComponent(manifest.scan.home, isDirectory: true)
+    let project = workingRoot.appendingPathComponent(manifest.scan.project, isDirectory: true)
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+
+    var protectedDirectories: [URL] = []
+    for relativePath in manifest.scan.protectedDirectories {
+      let url = workingRoot.appendingPathComponent(relativePath, isDirectory: true)
+      if DiscoveryUtilities.directoryExists(url) {
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: url.path)
+        protectedDirectories.append(url)
+      }
     }
+    defer {
+      for url in protectedDirectories {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+      }
+    }
+
+    return try body(manifest, home, project)
   }
 
   private static func discoveryBenchScan(home: URL, project: URL) throws -> DiscoveryScanResult {
@@ -1018,6 +1101,44 @@ enum DiscoverySelfTest {
       KeywordFileScanner(config: config, skillScanner: skillScanner, memoryScanner: memoryScanner)
         .scan(additionalRoots: [project]))
     return result
+  }
+
+  private static func coldStartBenchScan(home: URL, project: URL) throws -> DiscoveryScanResult {
+    let config = DiscoveryConfiguration(
+      homeDirectory: home,
+      projectRoot: project,
+      scanRoots: [project],
+      limits: ScanLimits(
+        maxDepth: 6, maxFileBytes: 128 * 1024, maxDirectoryEntries: 512,
+        maxScannedDirectories: 256, maxInspectedFiles: 1024, maxCollectedMemoryFiles: 128),
+      enableColdStartScan: true,
+      enableRuntimeObserver: false,
+      enableFSEventsWatcher: false,
+      enableEndpointSecurityMonitor: false,
+      enableNetworkMonitor: false,
+      enableUserApplicationSupportScan: false
+    )
+    return try ColdStartScanner(
+      knownAgentScanner: KnownAgentScanner(
+        registry: .bundled(),
+        skillScanner: SkillScanner(limits: config.limits),
+        memoryScanner: MemoryFileScanner(limits: config.limits),
+        config: config),
+      keywordScanner: KeywordFileScanner(
+        config: config,
+        skillScanner: SkillScanner(limits: config.limits),
+        memoryScanner: MemoryFileScanner(limits: config.limits)),
+      processInspector: ProcessInspector(
+        behaviorEngine: BehaviorFingerprintEngine(), config: config, registry: .bundled()),
+      permissionInspector: FileSystemPermissionInspector(),
+      endpointSecurityMonitor: EndpointSecurityMonitor(),
+      networkFlowMonitor: NetworkFlowMonitor(),
+      config: config
+    ).runFullScan()
+  }
+
+  private static func formatSeconds(_ seconds: TimeInterval) -> String {
+    String(format: "%.3f", seconds)
   }
 
   private static func preparedCodexProject() throws -> URL {
@@ -1300,6 +1421,19 @@ private struct BenchExpectedPathItem: Decodable {
   func describe() -> String {
     pathSuffix
   }
+}
+
+private struct BenchColdStartRow {
+  var id: String
+  var passed: Bool
+  var elapsedSeconds: TimeInterval
+  var agents: Int
+  var mcpServers: Int
+  var skills: Int
+  var contextFiles: Int
+  var memoryAssets: Int
+  var permissionEvidence: Int
+  var failures: [String]
 }
 
 private struct BenchValidationError: LocalizedError {

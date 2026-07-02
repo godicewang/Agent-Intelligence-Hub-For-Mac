@@ -40,6 +40,7 @@ def write_fixture(output: Path) -> None:
     fingerprints = load_fingerprints()
     expected_agents = []
     expected_mcp = []
+    expected_skills = []
 
     for fingerprint in fingerprints:
         if fingerprint["normalizedName"] not in {"claude-code", "codex-cli"}:
@@ -59,6 +60,16 @@ def write_fixture(output: Path) -> None:
     project = output / "project"
     project.mkdir(parents=True, exist_ok=True)
     (project / "AGENTS.md").write_text("# Fingerprint Generated Fixture\n\nGenerated from FrostMI fingerprints.\n")
+    claude_skill = output / "home/.claude/skills/generated-claude-skill/SKILL.md"
+    claude_skill.parent.mkdir(parents=True, exist_ok=True)
+    claude_skill.write_text("# Generated Claude Skill\n\nSynthetic bench skill generated from FrostMI fingerprints.\n")
+    codex_skill = output / "home/.agents/skills/generated-codex-skill/SKILL.md"
+    codex_skill.parent.mkdir(parents=True, exist_ok=True)
+    codex_skill.write_text("# Generated Codex Skill\n\nSynthetic bench skill generated from FrostMI fingerprints.\n")
+    expected_skills.extend([
+        {"name": "generated-claude-skill", "minCount": 1},
+        {"name": "generated-codex-skill", "minCount": 1},
+    ])
     manifest = {
         "schemaVersion": 1,
         "id": "generated-fingerprint-single-agent",
@@ -69,7 +80,7 @@ def write_fixture(output: Path) -> None:
         "expected": {
             "agents": expected_agents,
             "mcpServers": expected_mcp,
-            "skills": [],
+            "skills": expected_skills,
             "contextFiles": [{"pathSuffix": "project/AGENTS.md"}],
             "memoryAssets": [],
             "absentMCPServers": [],

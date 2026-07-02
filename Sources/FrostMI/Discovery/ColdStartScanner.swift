@@ -50,7 +50,7 @@ final class ColdStartScanner: @unchecked Sendable {
           deadline: deadline
         ))
     }
-    if !isExpired(deadline) {
+    if config.enableRuntimeObserver, !isExpired(deadline) {
       result.merge(processInspector.inspectRunningProcesses(deadline: deadline))
     }
     if !config.scanRoots.isEmpty {
