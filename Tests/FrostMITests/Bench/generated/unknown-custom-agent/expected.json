@@ -20,7 +20,8 @@
       { "name": "local-custom-agent", "minCount": 1 }
     ],
     "contextFiles": [
-      { "pathSuffix": "project/AGENTS.md" }
+      { "pathSuffix": "project/AGENTS.md" },
+      { "pathSuffix": "project/.mcp.json" }
     ],
     "memoryAssets": [
       { "pathSuffix": "project/memory/session.jsonl" }

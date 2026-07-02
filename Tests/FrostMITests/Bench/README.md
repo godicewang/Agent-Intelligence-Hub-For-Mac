@@ -41,4 +41,4 @@ Use the full bench path when changing shared parser, scanner, packaging, fixture
 Scripts/run_bench_tests.sh
 ```
 
-The full bench regenerates fingerprint-derived fixtures, runs discovery self-tests, runs the cold-start Agent bench, and verifies packaged app resource loading.
+The full bench regenerates fingerprint-derived fixtures, runs discovery self-tests, runs the cold-start Agent bench in `--strict` mode, and verifies packaged app resource loading.

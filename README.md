@@ -153,7 +153,7 @@ For the current full bench path:
 Scripts/run_bench_tests.sh
 ```
 
-The bench lives under `Tests/FrostMITests/Bench` and includes Snyk-inspired static discovery fixtures, FrostMI-generated edge cases, external dataset adapter manifests, a compact Claude trace graph sample, and a SHA256-pinned TraceLab downloader. Large external datasets are kept under git-ignored `datasets/`.
+The bench lives under `Tests/FrostMITests/Bench` and includes Snyk-inspired static discovery fixtures, FrostMI-generated edge cases, external dataset adapter manifests, a compact Claude trace graph sample, and a SHA256-pinned TraceLab downloader. The full bench runs cold-start discovery in strict mode so extra assets, duplicate candidates, and owner mismatches fail the validation. Large external datasets are kept under git-ignored `datasets/`.
 
 To fetch the fixed TraceLab v0.0.1 JSONL dataset for future replay work:
 

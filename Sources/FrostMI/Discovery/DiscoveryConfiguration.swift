@@ -43,6 +43,11 @@ struct DiscoveryConfiguration: Codable, Hashable {
   }
 
   func allowsAutomaticAccess(to url: URL) -> Bool {
+    if usesIsolatedHomeDirectory,
+      Self.isSystemLevelAbsolutePath(url)
+    {
+      return false
+    }
     if !enableUserApplicationSupportScan,
       DiscoveryUtilities.isUserApplicationSupportPath(url, home: homeDirectory),
       !Self.isKnownAgentApplicationSupportPath(url, homeDirectory: homeDirectory)
@@ -50,6 +55,25 @@ struct DiscoveryConfiguration: Codable, Hashable {
       return false
     }
     return true
+  }
+
+  private var usesIsolatedHomeDirectory: Bool {
+    homeDirectory.standardizedFileURL.path
+      != FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+  }
+
+  private static func isSystemLevelAbsolutePath(_ url: URL) -> Bool {
+    let path = url.standardizedFileURL.path
+    return path.hasPrefix("/Applications/")
+      || path.hasPrefix("/Library/")
+      || path.hasPrefix("/System/")
+      || path.hasPrefix("/etc/")
+      || path.hasPrefix("/opt/")
+      || path == "/Applications"
+      || path == "/Library"
+      || path == "/System"
+      || path == "/etc"
+      || path == "/opt"
   }
 
   private static let knownAgentApplicationSupportDirectories: Set<String> = [

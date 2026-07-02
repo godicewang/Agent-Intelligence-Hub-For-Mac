@@ -17,7 +17,9 @@
     ],
     "mcpServers": [
       { "name": "shared-filesystem", "minCount": 2 },
-      { "name": "mixed-project", "minCount": 1 }
+      { "name": "mixed-project", "minCount": 1 },
+      { "name": "cursor-mixed", "minCount": 1 },
+      { "name": "gemini-mixed", "minCount": 1 }
     ],
     "skills": [
       { "name": "shared-review", "minCount": 1 }
@@ -25,7 +27,8 @@
     "contextFiles": [
       { "pathSuffix": "project/AGENTS.md" },
       { "pathSuffix": "project/CLAUDE.md" },
-      { "pathSuffix": "project/GEMINI.md" }
+      { "pathSuffix": "project/GEMINI.md" },
+      { "pathSuffix": "project/.mcp.json" }
     ],
     "memoryAssets": [
       { "pathSuffix": "home/.codex/session_index.jsonl" }

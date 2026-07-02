@@ -56,7 +56,9 @@ final class KnownAgentScanner {
       for path in fingerprint.configPaths {
         guard !isExpired(deadline) else { break }
         for url in expandedCandidates(path) where shouldAccess(url) {
-          if DiscoveryUtilities.fileExists(url) {
+          if DiscoveryUtilities.fileExists(url)
+            && configPathShouldCount(url, fingerprint: fingerprint)
+          {
             configPaths.append(url.path)
             confidence += fingerprint.confidenceWeights.configPath
             evidence.append(
@@ -71,7 +73,9 @@ final class KnownAgentScanner {
       for path in fingerprint.mcpConfigPaths {
         guard !isExpired(deadline) else { break }
         for url in expandedCandidates(path) where shouldAccess(url) {
-          if DiscoveryUtilities.fileExists(url) {
+          if DiscoveryUtilities.fileExists(url)
+            && configPathShouldCount(url, fingerprint: fingerprint)
+          {
             mcpConfigPaths.append(url.path)
             confidence += fingerprint.confidenceWeights.mcpConfig
             evidence.append(
@@ -86,7 +90,8 @@ final class KnownAgentScanner {
       for path in fingerprint.skillPaths {
         guard !isExpired(deadline) else { break }
         for url in expandedCandidates(path)
-        where shouldAccess(url) && DiscoveryUtilities.directoryExists(url) {
+        where shouldAccess(url) && DiscoveryUtilities.directoryExists(url)
+          && skillPathShouldCount(path, fingerprint: fingerprint, confidence: confidence) {
           skillPaths.append(url.path)
           confidence += fingerprint.confidenceWeights.skill
           evidence.append(
@@ -99,7 +104,9 @@ final class KnownAgentScanner {
       for path in fingerprint.cachePaths {
         guard !isExpired(deadline) else { break }
         for url in expandedCandidates(path) where shouldAccess(url) {
-          if DiscoveryUtilities.fileExists(url) || DiscoveryUtilities.directoryExists(url) {
+          if (DiscoveryUtilities.fileExists(url) || DiscoveryUtilities.directoryExists(url))
+            && supportPathShouldCount(url, fingerprint: fingerprint)
+          {
             cachePaths.append(url.path)
             confidence += fingerprint.confidenceWeights.cache
             evidence.append(
@@ -113,7 +120,9 @@ final class KnownAgentScanner {
       for path in fingerprint.memoryPaths {
         guard !isExpired(deadline) else { break }
         for url in expandedCandidates(path) where shouldAccess(url) {
-          if DiscoveryUtilities.fileExists(url) || DiscoveryUtilities.directoryExists(url) {
+          if (DiscoveryUtilities.fileExists(url) || DiscoveryUtilities.directoryExists(url))
+            && supportPathShouldCount(url, fingerprint: fingerprint)
+          {
             memoryPaths.append(url.path)
             confidence += fingerprint.confidenceWeights.memory
             evidence.append(
@@ -124,12 +133,21 @@ final class KnownAgentScanner {
         }
       }
 
+      let directConfidence = confidence
       for root in config.scanRoots where DiscoveryUtilities.directoryExists(root) {
         guard !isExpired(deadline) else { break }
         for marker in fingerprint.projectMarkers {
           guard !isExpired(deadline) else { break }
           for markerURL in matchingMarkerURLs(marker, in: root) {
+            guard
+              projectMarkerShouldCount(
+                marker, markerURL: markerURL, fingerprint: fingerprint,
+                directConfidence: directConfidence)
+            else { continue }
             workspacePaths.append(root.path)
+            if isMCPConfigMarker(markerURL) {
+              mcpConfigPaths.append(markerURL.path)
+            }
             confidence += fingerprint.confidenceWeights.projectMarker
             evidence.append(
               evidenceRecord(
@@ -204,6 +222,7 @@ final class KnownAgentScanner {
         contentsOf: memoryScanner.scan(files: memoryURLs, sourceAgentId: asset.id))
     }
 
+    suppressTerminalFallbackIfStrongerCandidateExists(result: &result)
     return result
   }
 
@@ -260,6 +279,158 @@ final class KnownAgentScanner {
       + NSRegularExpression.escapedPattern(for: pattern)
       .replacingOccurrences(of: "\\*", with: ".*") + "$"
     return value.range(of: regex, options: .regularExpression) != nil
+  }
+
+  private func configPathShouldCount(_ url: URL, fingerprint: AgentFingerprint) -> Bool {
+    let path = url.path.lowercased()
+    let isSharedIDEUserSettings =
+      path.contains("/library/application support/code/user/settings.json")
+      || path.contains("/library/application support/cursor/user/settings.json")
+    guard isSharedIDEUserSettings else { return true }
+
+    if fingerprint.normalizedName == "cursor",
+      path.contains("/library/application support/cursor/user/settings.json")
+    {
+      return true
+    }
+
+    guard
+      let text = DiscoveryUtilities.readSmallTextFile(
+        url, maxBytes: min(config.limits.maxFileBytes, 128 * 1024))?.lowercased()
+    else {
+      return false
+    }
+    return contentMatchesSharedIDEFingerprint(
+      text, fingerprint: fingerprint, path: path)
+  }
+
+  private func supportPathShouldCount(_ url: URL, fingerprint: AgentFingerprint) -> Bool {
+    let path = url.path.lowercased()
+    let isSharedIDESupport =
+      path.contains("/library/application support/code/user/globalstorage")
+      || path.contains("/library/application support/cursor/user/globalstorage")
+    guard isSharedIDESupport else { return true }
+
+    if fingerprint.normalizedName == "cursor",
+      path.contains("/library/application support/cursor/")
+    {
+      return true
+    }
+    if fingerprint.normalizedName == "unknown-vscode-agent-extension",
+      path.contains("/library/application support/code/")
+    {
+      return true
+    }
+    return path.contains(fingerprint.normalizedName)
+      || path.contains(fingerprint.displayName.normalizedAssetName)
+  }
+
+  private func projectMarkerShouldCount(
+    _ marker: String,
+    markerURL: URL,
+    fingerprint: AgentFingerprint,
+    directConfidence: Int
+  ) -> Bool {
+    if fingerprint.normalizedName == "unknown-vscode-agent-extension",
+      directConfidence == 0,
+      !markerURL.path.lowercased().contains("/.vscode/")
+    {
+      return false
+    }
+
+    if fingerprint.agentType == .desktop, directConfidence == 0 {
+      return false
+    }
+
+    if isSharedProjectMarker(marker), directConfidence == 0,
+      fingerprint.agentType != .unknownCandidate
+    {
+      return false
+    }
+
+    if marker.contains(".vscode/settings.json") || marker.contains(".cursor/settings.json") {
+      guard
+        let text = DiscoveryUtilities.readSmallTextFile(
+          markerURL, maxBytes: min(config.limits.maxFileBytes, 128 * 1024))?.lowercased()
+      else {
+        return false
+      }
+      return contentMatchesSharedIDEFingerprint(
+        text, fingerprint: fingerprint, path: markerURL.path.lowercased())
+    }
+    return true
+  }
+
+  private func skillPathShouldCount(
+    _ path: String, fingerprint: AgentFingerprint, confidence: Int
+  ) -> Bool {
+    let lower = path.lowercased()
+    if lower == "skills" || lower == ".agents/skills" {
+      return confidence > 0
+    }
+    if lower == "~/.claude/skills" || lower.hasSuffix("/.claude/skills") {
+      return confidence > 0 || fingerprint.normalizedName == "claude-code"
+    }
+    if lower == "~/.agents/skills" || lower.hasSuffix("/.agents/skills") {
+      return confidence > 0 || fingerprint.normalizedName == "codex-cli"
+    }
+    return true
+  }
+
+  private func isSharedProjectMarker(_ marker: String) -> Bool {
+    [
+      "AGENTS.md",
+      ".mcp.json",
+      "mcp.json",
+      "SKILL.md",
+      "skills",
+      ".agents/skills",
+    ].contains(marker)
+  }
+
+  private func isMCPConfigMarker(_ url: URL) -> Bool {
+    let name = url.lastPathComponent
+    if name == ".mcp.json" || name == "mcp.json" {
+      return true
+    }
+    let path = url.path.lowercased()
+    return path.hasSuffix("/.codex/config.toml")
+      || path.hasSuffix("/.cursor/mcp.json")
+      || path.hasSuffix("/.windsurf/mcp.json")
+  }
+
+  private func contentMatchesSharedIDEFingerprint(
+    _ text: String, fingerprint: AgentFingerprint, path: String
+  ) -> Bool {
+    switch fingerprint.normalizedName {
+    case "cline-roocode":
+      return text.contains("cline") || text.contains("roocode") || text.contains("roo-code")
+        || text.contains("roo code")
+    case "continue":
+      return text.contains("continue")
+    case "unknown-vscode-agent-extension":
+      return path.contains("/library/application support/code/user/settings.json")
+        && (text.contains("mcpservers") || text.contains("chat.agent") || text.contains("tool"))
+    default:
+      return true
+    }
+  }
+
+  private func suppressTerminalFallbackIfStrongerCandidateExists(result: inout DiscoveryScanResult)
+  {
+    let hasStrongerCandidate = result.agents.contains {
+      $0.normalizedName != "unknown-terminal-agent-candidate"
+    }
+    guard hasStrongerCandidate else { return }
+    let removedIds = Set(
+      result.agents
+        .filter { $0.normalizedName == "unknown-terminal-agent-candidate" }
+        .map(\.id))
+    guard !removedIds.isEmpty else { return }
+    result.agents.removeAll { removedIds.contains($0.id) }
+    result.evidence.removeAll { evidence in
+      evidence.assetId.map { removedIds.contains($0) } ?? false
+    }
   }
 
   private func shouldAccess(_ url: URL) -> Bool {

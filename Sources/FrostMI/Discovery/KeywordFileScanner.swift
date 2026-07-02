@@ -143,6 +143,7 @@ final class KeywordFileScanner: @unchecked Sendable {
       }
     }
 
+    guard shouldRecordContextAsset(url) else { return }
     guard let text = parser.text(at: url, maxBytes: config.limits.maxFileBytes) else { return }
     let keywords = (agentKeywords + llmKeywords + mcpSkillKeywords).uniqueSorted()
     let hits = parser.keywordHits(in: text, keywords: keywords)
@@ -165,6 +166,7 @@ final class KeywordFileScanner: @unchecked Sendable {
     )
     result.contextFiles.append(context)
 
+    guard !hits.isEmpty, context.detectedAgent == nil else { return }
     let agent = AgentAsset(
       displayName: context.detectedAgent ?? "Workspace Agent Context",
       normalizedName: context.detectedAgent?.normalizedAssetName ?? "workspace-agent-context",
@@ -194,9 +196,27 @@ final class KeywordFileScanner: @unchecked Sendable {
 
   private func detectedAgentName(from fileName: String, hits: [String]) -> String? {
     if fileName == "CLAUDE.md" || hits.contains("claude") { return "Claude Context" }
-    if fileName == "AGENTS.md" || hits.contains("codex") { return "Agent Context" }
     if fileName == "GEMINI.md" || hits.contains("gemini") { return "Gemini Context" }
     return nil
+  }
+
+  private func shouldRecordContextAsset(_ url: URL) -> Bool {
+    let name = url.lastPathComponent
+    let lower = name.lowercased()
+    if lower.hasSuffix(".jsonl") || lower.hasSuffix(".sqlite") || lower.hasSuffix(".db")
+      || lower.contains("memory") || lower.contains("session") || lower.contains("conversation")
+      || lower.contains("history") || lower.contains("state")
+    {
+      return false
+    }
+    if ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "CODEX.md"].contains(name) {
+      return true
+    }
+    let standardizedPath = url.standardizedFileURL.path
+    return config.scanRoots.contains { root in
+      let rootPath = root.standardizedFileURL.path
+      return standardizedPath == rootPath || standardizedPath.hasPrefix(rootPath + "/")
+    }
   }
 }
 

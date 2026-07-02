@@ -311,15 +311,215 @@ final class ColdStartScanner: @unchecked Sendable {
 
 extension DiscoveryScanResult {
   mutating func merge(_ other: DiscoveryScanResult) {
-    agents.append(contentsOf: other.agents)
-    mcpServers.append(contentsOf: other.mcpServers)
-    skills.append(contentsOf: other.skills)
-    contextFiles.append(contentsOf: other.contextFiles)
-    memories.append(contentsOf: other.memories)
-    runtimeProcesses.append(contentsOf: other.runtimeProcesses)
-    evidence.append(contentsOf: other.evidence)
-    permissionStates.append(contentsOf: other.permissionStates)
-    events.append(contentsOf: other.events)
+    let agentMerge = mergedAgents(agents + other.agents)
+    agents = suppressContextOnlyAgentsWhenSpecificAgentsExist(agentMerge.agents)
+    let idMap = agentMerge.idMap
+    let agentsById = Dictionary(uniqueKeysWithValues: agents.map { ($0.id, $0) })
+
+    mcpServers = mergedMCPServers(
+      (mcpServers + other.mcpServers).map { remapOwner($0, idMap: idMap) },
+      agentsById: agentsById)
+    skills = mergedSkills(
+      (skills + other.skills).map { remapOwner($0, idMap: idMap) },
+      agentsById: agentsById)
+    contextFiles = mergeByKey(contextFiles + other.contextFiles) { $0.path }
+    memories = mergedMemories(
+      (memories + other.memories).map { remapOwner($0, idMap: idMap) },
+      agentsById: agentsById)
+    runtimeProcesses = mergeByKey(runtimeProcesses + other.runtimeProcesses) {
+      String($0.pid)
+    }
+    evidence = mergeByKey((evidence + other.evidence).map { remapEvidence($0, idMap: idMap) }) {
+      $0.id.uuidString
+    }
+    permissionStates = mergeByKey(permissionStates + other.permissionStates) {
+      $0.capability.rawValue
+    }
+    events = mergeByKey(events + other.events) { $0.id.uuidString }
     scannedAt = max(scannedAt, other.scannedAt)
   }
+}
+
+private func suppressContextOnlyAgentsWhenSpecificAgentsExist(
+  _ agents: [AgentAsset]
+) -> [AgentAsset] {
+  let contextCandidateNames: Set<String> = [
+    "workspace-agent-context",
+    "agent-context",
+    "claude-context",
+    "gemini-context",
+  ]
+  let hasSpecificAgent = agents.contains {
+    !contextCandidateNames.contains($0.normalizedName)
+      && $0.normalizedName != "unknown-terminal-agent-candidate"
+  }
+  guard hasSpecificAgent else { return agents }
+  return agents.filter { !contextCandidateNames.contains($0.normalizedName) }
+}
+
+private func mergedAgents(_ values: [AgentAsset]) -> (agents: [AgentAsset], idMap: [UUID: UUID]) {
+  var keyed: [String: AgentAsset] = [:]
+  var order: [String] = []
+  var idMap: [UUID: UUID] = [:]
+
+  for value in values {
+    let key = value.normalizedName
+    if var existing = keyed[key] {
+      existing.merge(with: value)
+      keyed[key] = existing
+      idMap[value.id] = existing.id
+    } else {
+      keyed[key] = value
+      order.append(key)
+      idMap[value.id] = value.id
+    }
+  }
+
+  return (order.compactMap { keyed[$0] }, idMap)
+}
+
+private func mergedMCPServers(
+  _ values: [MCPServerAsset], agentsById: [UUID: AgentAsset]
+) -> [MCPServerAsset] {
+  mergeByKey(values, key: { "\($0.configPath)|\($0.name)|\($0.manifestHash)" }) {
+    existing, incoming in
+    var merged = existing
+    merged.sourceAgentId = preferredOwner(
+      existing.sourceAgentId, incoming.sourceAgentId,
+      assetPath: incoming.configPath, agentsById: agentsById)
+    merged.riskPreScore = max(existing.riskPreScore, incoming.riskPreScore)
+    return merged
+  }
+}
+
+private func mergedSkills(
+  _ values: [SkillAsset], agentsById: [UUID: AgentAsset]
+) -> [SkillAsset] {
+  mergeByKey(values, key: { "\($0.path)|\($0.hash)" }) { existing, incoming in
+    var merged = existing
+    merged.sourceAgentId = preferredOwner(
+      existing.sourceAgentId, incoming.sourceAgentId,
+      assetPath: incoming.path, agentsById: agentsById)
+    merged.hasScripts = existing.hasScripts || incoming.hasScripts
+    merged.hasExternalURLs = existing.hasExternalURLs || incoming.hasExternalURLs
+    merged.hasInstallInstructions = existing.hasInstallInstructions || incoming.hasInstallInstructions
+    merged.hasSensitivePermissionHints =
+      existing.hasSensitivePermissionHints || incoming.hasSensitivePermissionHints
+    return merged
+  }
+}
+
+private func mergedMemories(
+  _ values: [MemoryAsset], agentsById: [UUID: AgentAsset]
+) -> [MemoryAsset] {
+  mergeByKey(values, key: { $0.path }) { existing, incoming in
+    var merged = existing
+    merged.sourceAgentId = preferredOwner(
+      existing.sourceAgentId, incoming.sourceAgentId,
+      assetPath: incoming.path, agentsById: agentsById)
+    merged.containsToolHistory = existing.containsToolHistory || incoming.containsToolHistory
+    merged.containsConversationHistory =
+      existing.containsConversationHistory || incoming.containsConversationHistory
+    merged.containsProceduralMemory =
+      existing.containsProceduralMemory || incoming.containsProceduralMemory
+    return merged
+  }
+}
+
+private func mergeByKey<T>(
+  _ values: [T], key: (T) -> String, merge: (T, T) -> T
+) -> [T] {
+  var keyed: [String: T] = [:]
+  for value in values {
+    let itemKey = key(value)
+    if let existing = keyed[itemKey] {
+      keyed[itemKey] = merge(existing, value)
+    } else {
+      keyed[itemKey] = value
+    }
+  }
+  return keyed.values.sorted { key($0) < key($1) }
+}
+
+private func mergeByKey<T>(_ values: [T], key: (T) -> String) -> [T] {
+  mergeByKey(values, key: key) { existing, _ in existing }
+}
+
+private func remapOwner(_ value: MCPServerAsset, idMap: [UUID: UUID]) -> MCPServerAsset {
+  var copy = value
+  copy.sourceAgentId = value.sourceAgentId.flatMap { idMap[$0] ?? $0 }
+  return copy
+}
+
+private func remapOwner(_ value: SkillAsset, idMap: [UUID: UUID]) -> SkillAsset {
+  var copy = value
+  copy.sourceAgentId = value.sourceAgentId.flatMap { idMap[$0] ?? $0 }
+  return copy
+}
+
+private func remapOwner(_ value: MemoryAsset, idMap: [UUID: UUID]) -> MemoryAsset {
+  var copy = value
+  copy.sourceAgentId = value.sourceAgentId.flatMap { idMap[$0] ?? $0 }
+  return copy
+}
+
+private func remapEvidence(_ value: DiscoveryEvidence, idMap: [UUID: UUID]) -> DiscoveryEvidence {
+  var copy = value
+  copy.assetId = value.assetId.flatMap { idMap[$0] ?? $0 }
+  return copy
+}
+
+private func preferredOwner(
+  _ existing: UUID?,
+  _ incoming: UUID?,
+  assetPath: String,
+  agentsById: [UUID: AgentAsset]
+) -> UUID? {
+  let existingScore = ownerScore(existing, assetPath: assetPath, agentsById: agentsById)
+  let incomingScore = ownerScore(incoming, assetPath: assetPath, agentsById: agentsById)
+  if incomingScore > existingScore {
+    return incoming
+  }
+  return existing ?? incoming
+}
+
+private func ownerScore(
+  _ owner: UUID?,
+  assetPath: String,
+  agentsById: [UUID: AgentAsset]
+) -> Int {
+  guard let owner, let agent = agentsById[owner] else { return 0 }
+  guard let impliedOwners = impliedOwnerNames(for: assetPath) else { return 1 }
+  return impliedOwners.contains(agent.normalizedName) ? 3 : 1
+}
+
+private func impliedOwnerNames(for path: String) -> Set<String>? {
+  let lower = path.lowercased()
+  if lower.contains("/.codex/") || lower.hasSuffix("/.codex") || lower.contains("/codex/") {
+    return ["codex-cli", "codex-app"]
+  }
+  if lower.contains("/.claude/") || lower.hasSuffix("/.claude") || lower.contains("claude") {
+    return ["claude-code", "claude-desktop"]
+  }
+  if lower.contains("/.cursor/") || lower.contains("application support/cursor") {
+    return ["cursor"]
+  }
+  if lower.contains("/.gemini/") || lower.contains("gemini") {
+    return ["gemini-cli"]
+  }
+  if lower.contains("/.codeium/windsurf") || lower.contains("/.windsurf/")
+    || lower.contains("application support/windsurf")
+  {
+    return ["windsurf"]
+  }
+  if lower.contains("/.openclaw/") || lower.contains("openclaw") {
+    return ["openclaw"]
+  }
+  if lower.contains("/.continue/") || lower.contains("continue") {
+    return ["continue"]
+  }
+  if lower.contains("aider") {
+    return ["aider"]
+  }
+  return nil
 }
