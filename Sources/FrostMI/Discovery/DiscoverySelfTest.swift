@@ -817,6 +817,7 @@ enum DiscoverySelfTest {
     defer {
       temporaryDirectoryRegistry.cleanup()
     }
+    let mode = BenchAuditMode(arguments: CommandLine.arguments)
 
     let manifestURLs = discoveryBenchManifestURLs()
     guard !manifestURLs.isEmpty else {
@@ -832,9 +833,13 @@ enum DiscoverySelfTest {
           let rowStartedAt = Date()
           let result = try coldStartBenchScan(home: home, project: project)
           let failures = benchValidationFailures(result: result, expected: manifest.expected)
+          let auditIssues =
+            mode.shouldAudit
+            ? benchAuditIssues(result: result, expected: manifest.expected)
+            : []
           return BenchColdStartRow(
             id: manifest.id,
-            passed: failures.isEmpty,
+            passed: failures.isEmpty && (!mode.shouldFailOnAudit || auditIssues.isEmpty),
             elapsedSeconds: Date().timeIntervalSince(rowStartedAt),
             agents: result.agents.count,
             mcpServers: result.mcpServers.count,
@@ -842,7 +847,8 @@ enum DiscoverySelfTest {
             contextFiles: result.contextFiles.count,
             memoryAssets: result.memories.count,
             permissionEvidence: result.evidence.filter { $0.evidenceType == .permission }.count,
-            failures: failures)
+            failures: failures,
+            auditIssues: auditIssues)
         }
         rows.append(row)
       } catch {
@@ -857,7 +863,8 @@ enum DiscoverySelfTest {
             contextFiles: 0,
             memoryAssets: 0,
             permissionEvidence: 0,
-            failures: [error.localizedDescription]))
+            failures: [error.localizedDescription],
+            auditIssues: []))
       }
     }
 
@@ -866,18 +873,30 @@ enum DiscoverySelfTest {
     let elapsed = Date().timeIntervalSince(startedAt)
     print("FrostMI Cold Start Agent Bench")
     print("dataset=Tests/FrostMITests/Bench/static/snyk + Tests/FrostMITests/Bench/generated")
+    print("mode=\(mode.rawValue)")
     print(
       "fixtures=\(rows.count) passed=\(passed) failed=\(failed) elapsed=\(formatSeconds(elapsed))s"
     )
     print(
       "totals agents=\(rows.map(\.agents).reduce(0, +)) mcp=\(rows.map(\.mcpServers).reduce(0, +)) skills=\(rows.map(\.skills).reduce(0, +)) context=\(rows.map(\.contextFiles).reduce(0, +)) memory=\(rows.map(\.memoryAssets).reduce(0, +)) permissionEvidence=\(rows.map(\.permissionEvidence).reduce(0, +))"
     )
+    if mode.shouldAudit {
+      let auditIssues = rows.flatMap(\.auditIssues)
+      let auditErrors = auditIssues.filter { $0.severity == .error }.count
+      let auditWarnings = auditIssues.filter { $0.severity == .warning }.count
+      print(
+        "audit issues=\(auditIssues.count) warnings=\(auditWarnings) errors=\(auditErrors)"
+      )
+    }
     for row in rows {
       print(
-        "- \(row.id) \(row.passed ? "PASS" : "FAIL") agents=\(row.agents) mcp=\(row.mcpServers) skills=\(row.skills) context=\(row.contextFiles) memory=\(row.memoryAssets) permissionEvidence=\(row.permissionEvidence) elapsed=\(formatSeconds(row.elapsedSeconds))s"
+        "- \(row.id) \(row.passed ? "PASS" : "FAIL") agents=\(row.agents) mcp=\(row.mcpServers) skills=\(row.skills) context=\(row.contextFiles) memory=\(row.memoryAssets) permissionEvidence=\(row.permissionEvidence) audit=\(row.auditIssues.count) elapsed=\(formatSeconds(row.elapsedSeconds))s"
       )
       for failure in row.failures {
         print("  ! \(failure)")
+      }
+      if mode.shouldAudit {
+        printAuditIssues(row.auditIssues)
       }
     }
     return failed == 0 ? 0 : 1
@@ -1037,6 +1056,256 @@ enum DiscoverySelfTest {
       )
     }
     return failures
+  }
+
+  private static func benchAuditIssues(
+    result: DiscoveryScanResult, expected: BenchExpectedSpec
+  ) -> [BenchAuditIssue] {
+    var issues: [BenchAuditIssue] = []
+
+    let expectedAgentNames = Set(expected.agents.map(\.normalizedName))
+    let actualAgentNames = Set(result.agents.map(\.normalizedName))
+    for name in actualAgentNames.subtracting(expectedAgentNames).sorted() {
+      issues.append(
+        BenchAuditIssue(
+          severity: .warning,
+          kind: .extraAgent,
+          message: "extra agent candidate \(name)"))
+    }
+
+    let expectedMCPNames = Set(expected.mcpServers.map(\.name))
+    let actualMCPNames = Set(result.mcpServers.map(\.name))
+    for name in actualMCPNames.subtracting(expectedMCPNames).sorted() {
+      issues.append(
+        BenchAuditIssue(
+          severity: .warning,
+          kind: .extraMCPServer,
+          message: "extra MCP server \(name)"))
+    }
+
+    let expectedSkillNames = Set(expected.skills.map(\.name))
+    let actualSkillNames = Set(result.skills.map(\.name))
+    for name in actualSkillNames.subtracting(expectedSkillNames).sorted() {
+      issues.append(
+        BenchAuditIssue(
+          severity: .warning,
+          kind: .extraSkill,
+          message: "extra Skill \(name)"))
+    }
+
+    for context in result.contextFiles
+    where !expected.contextFiles.contains(where: { $0.matches([context.path]) }) {
+      issues.append(
+        BenchAuditIssue(
+          severity: .warning,
+          kind: .extraContextFile,
+          message: "extra context file \(compactBenchPath(context.path))"))
+    }
+
+    for memory in result.memories
+    where !expected.memoryAssets.contains(where: { $0.matches([memory.path]) }) {
+      issues.append(
+        BenchAuditIssue(
+          severity: .warning,
+          kind: .extraMemoryAsset,
+          message: "extra memory asset \(compactBenchPath(memory.path))"))
+    }
+
+    issues.append(
+      contentsOf: duplicateIssues(
+        kind: .duplicateAgent,
+        label: "agent normalized name",
+        items: result.agents.map(\.normalizedName)))
+    issues.append(
+      contentsOf: duplicateIssues(
+        kind: .duplicateMCPServer,
+        label: "MCP identity",
+        items: result.mcpServers.map { mcp in
+          [
+            mcp.name,
+            compactBenchPath(mcp.configPath),
+            mcp.command ?? "",
+            mcp.args.joined(separator: " "),
+          ].joined(separator: "|")
+        }))
+    issues.append(
+      contentsOf: duplicateIssues(
+        kind: .duplicateSkill,
+        label: "Skill path",
+        items: result.skills.map { compactBenchPath($0.path) }))
+    issues.append(
+      contentsOf: duplicateIssues(
+        kind: .duplicateContextFile,
+        label: "context path",
+        items: result.contextFiles.map { compactBenchPath($0.path) }))
+    issues.append(
+      contentsOf: duplicateIssues(
+        kind: .duplicateMemoryAsset,
+        label: "memory path",
+        items: result.memories.map { compactBenchPath($0.path) }))
+
+    issues.append(contentsOf: ownerIssues(result: result))
+    return issues
+  }
+
+  private static func duplicateIssues(
+    kind: BenchAuditIssueKind,
+    label: String,
+    items: [String]
+  ) -> [BenchAuditIssue] {
+    Dictionary(grouping: items, by: { $0 })
+      .filter { $0.value.count > 1 }
+      .keys
+      .sorted()
+      .map { value in
+        BenchAuditIssue(
+          severity: .warning,
+          kind: kind,
+          message: "duplicate \(label) \(value)")
+      }
+  }
+
+  private static func ownerIssues(result: DiscoveryScanResult) -> [BenchAuditIssue] {
+    let agentNamesById = Dictionary(uniqueKeysWithValues: result.agents.map { ($0.id, $0.normalizedName) })
+    var issues: [BenchAuditIssue] = []
+
+    for mcp in result.mcpServers {
+      issues.append(
+        contentsOf: ownerIssues(
+          assetLabel: "MCP \(mcp.name)",
+          assetPath: mcp.configPath,
+          sourceAgentId: mcp.sourceAgentId,
+          agentNamesById: agentNamesById))
+    }
+    for skill in result.skills {
+      issues.append(
+        contentsOf: ownerIssues(
+          assetLabel: "Skill \(skill.name)",
+          assetPath: skill.path,
+          sourceAgentId: skill.sourceAgentId,
+          agentNamesById: agentNamesById))
+    }
+    for memory in result.memories {
+      issues.append(
+        contentsOf: ownerIssues(
+          assetLabel: "Memory \(compactBenchPath(memory.path))",
+          assetPath: memory.path,
+          sourceAgentId: memory.sourceAgentId,
+          agentNamesById: agentNamesById))
+    }
+    return issues
+  }
+
+  private static func ownerIssues(
+    assetLabel: String,
+    assetPath: String,
+    sourceAgentId: UUID?,
+    agentNamesById: [UUID: String]
+  ) -> [BenchAuditIssue] {
+    let impliedOwners = impliedOwnerNames(for: assetPath)
+    if let sourceAgentId {
+      guard let actualOwner = agentNamesById[sourceAgentId] else {
+        return [
+          BenchAuditIssue(
+            severity: .error,
+            kind: .ownerReference,
+            message: "\(assetLabel) references missing owner \(sourceAgentId)")
+        ]
+      }
+      if let impliedOwners, !impliedOwners.contains(actualOwner) {
+        let impliedOwnerList = impliedOwners.sorted().joined(separator: "/")
+        return [
+          BenchAuditIssue(
+            severity: .error,
+            kind: .ownerMismatch,
+            message:
+              "\(assetLabel) owner \(actualOwner) conflicts with path-implied \(impliedOwnerList) at \(compactBenchPath(assetPath))")
+        ]
+      }
+      return []
+    }
+
+    guard let impliedOwners else { return [] }
+    let impliedOwnerList = impliedOwners.sorted().joined(separator: "/")
+    return [
+      BenchAuditIssue(
+        severity: .warning,
+        kind: .missingOwner,
+        message:
+          "\(assetLabel) has no sourceAgentId; path implies \(impliedOwnerList) at \(compactBenchPath(assetPath))")
+    ]
+  }
+
+  private static func impliedOwnerNames(for path: String) -> Set<String>? {
+    let lower = ownerInspectionPath(path).lowercased()
+    if lower.contains("/.codex/") || lower.hasSuffix("/.codex") || lower.contains("/codex/") {
+      return ["codex-cli", "codex-app"]
+    }
+    if lower.contains("/.claude/") || lower.hasSuffix("/.claude") || lower.contains("claude") {
+      return ["claude-code", "claude-desktop"]
+    }
+    if lower.contains("/.cursor/") || lower.contains("application support/cursor") {
+      return ["cursor"]
+    }
+    if lower.contains("/.gemini/") || lower.contains("gemini") {
+      return ["gemini-cli"]
+    }
+    if lower.contains("windsurf") {
+      return ["windsurf"]
+    }
+    if lower.contains("/.openclaw/") || lower.contains("openclaw") {
+      return ["openclaw"]
+    }
+    if lower.contains("aider") {
+      return ["aider"]
+    }
+    return nil
+  }
+
+  private static func ownerInspectionPath(_ path: String) -> String {
+    let components = path.split(separator: "/").map(String.init)
+    let anchorIndex = components.firstIndex { $0 == "home" || $0 == "project" }
+    guard let anchorIndex else {
+      return path
+    }
+    return "/" + components[anchorIndex...].joined(separator: "/")
+  }
+
+  private static func compactBenchPath(_ path: String) -> String {
+    let components = path.split(separator: "/").map(String.init)
+    guard
+      let tempIndex = components.firstIndex(where: {
+        $0.hasPrefix("FrostMIDiscoverySelfTest-")
+      }),
+      components.indices.contains(tempIndex + 1)
+    else {
+      return path
+    }
+    return components[(tempIndex + 1)...].joined(separator: "/")
+  }
+
+  private static func printAuditIssues(_ issues: [BenchAuditIssue]) {
+    guard !issues.isEmpty else { return }
+    let grouped = Dictionary(grouping: issues, by: \.kind)
+    let summary = grouped.keys.sorted { $0.rawValue < $1.rawValue }
+      .map { "\($0.rawValue)=\(grouped[$0, default: []].count)" }
+      .joined(separator: " ")
+    print("  ? audit \(summary)")
+    let sortedIssues = issues.sorted { lhs, rhs in
+      if lhs.severity != rhs.severity {
+        return lhs.severity.sortOrder < rhs.severity.sortOrder
+      }
+      if lhs.kind.rawValue != rhs.kind.rawValue {
+        return lhs.kind.rawValue < rhs.kind.rawValue
+      }
+      return lhs.message < rhs.message
+    }
+    for issue in sortedIssues.prefix(8) {
+      print("  ? [\(issue.severity.rawValue)] [\(issue.kind.rawValue)] \(issue.message)")
+    }
+    if issues.count > 8 {
+      print("  ? ... \(issues.count - 8) more audit issues")
+    }
   }
 
   private static func withDiscoveryBenchWorkspace<T>(
@@ -1434,6 +1703,67 @@ private struct BenchColdStartRow {
   var memoryAssets: Int
   var permissionEvidence: Int
   var failures: [String]
+  var auditIssues: [BenchAuditIssue]
+}
+
+private enum BenchAuditMode: String {
+  case coverage
+  case audit
+  case strict
+
+  init(arguments: [String]) {
+    if arguments.contains("--strict") {
+      self = .strict
+    } else if arguments.contains("--audit") {
+      self = .audit
+    } else {
+      self = .coverage
+    }
+  }
+
+  var shouldAudit: Bool {
+    self == .audit || self == .strict
+  }
+
+  var shouldFailOnAudit: Bool {
+    self == .strict
+  }
+}
+
+private enum BenchAuditSeverity: String {
+  case warning
+  case error
+
+  var sortOrder: Int {
+    switch self {
+    case .error:
+      return 0
+    case .warning:
+      return 1
+    }
+  }
+}
+
+private enum BenchAuditIssueKind: String {
+  case extraAgent
+  case extraMCPServer
+  case extraSkill
+  case extraContextFile
+  case extraMemoryAsset
+  case duplicateAgent
+  case duplicateMCPServer
+  case duplicateSkill
+  case duplicateContextFile
+  case duplicateMemoryAsset
+  case ownerReference
+  case ownerMismatch
+  case missingOwner
+}
+
+private struct BenchAuditIssue {
+  var severity: BenchAuditSeverity
+  var kind: BenchAuditIssueKind
+  var message: String
 }
 
 private struct BenchValidationError: LocalizedError {

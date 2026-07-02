@@ -138,6 +138,15 @@ Scripts/run_cold_start_agent_bench.sh
 
 This regenerates fingerprint-derived fixtures, runs the same full cold-start scanner path used by Agent Sensing, and prints per-fixture counts for agents, MCP servers, skills, context files, memory assets, and permission evidence. It uses `Tests/FrostMITests/Bench/static/snyk` and `Tests/FrostMITests/Bench/generated` because those datasets are purpose-built for static endpoint discovery.
 
+For stricter quality review:
+
+```bash
+Scripts/run_cold_start_agent_bench.sh --audit
+Scripts/run_cold_start_agent_bench.sh --strict
+```
+
+`--audit` keeps the normal minimum expected-label check, then lists extra assets, duplicate candidates, missing owner links, and owner mismatches without failing the command. `--strict` treats those audit findings as failures.
+
 For the current full bench path:
 
 ```bash

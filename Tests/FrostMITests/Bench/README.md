@@ -25,6 +25,16 @@ Scripts/run_cold_start_agent_bench.sh
 
 It runs full cold-start discovery against `static/snyk/` and `generated/`, then reports fixture-level counts for agents, MCP servers, skills, context files, memory assets, and permission evidence.
 
+Additional modes:
+
+```bash
+Scripts/run_cold_start_agent_bench.sh --audit
+Scripts/run_cold_start_agent_bench.sh --strict
+```
+
+- `--audit` reports extra assets, duplicate candidates, missing owner links, and owner mismatches while preserving the normal coverage pass/fail result.
+- `--strict` promotes those audit findings to failures so regressions cannot hide behind minimum expected-label coverage.
+
 Use the full bench path when changing shared parser, scanner, packaging, fixture, or bench infrastructure:
 
 ```bash
