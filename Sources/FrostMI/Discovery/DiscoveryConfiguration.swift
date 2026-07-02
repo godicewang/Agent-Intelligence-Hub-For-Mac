@@ -59,6 +59,7 @@ struct DiscoveryConfiguration: Codable, Hashable {
     "Code",
     "Code - Insiders",
     "Trae",
+    "Windsurf",
   ]
 
   private static func isKnownAgentApplicationSupportPath(

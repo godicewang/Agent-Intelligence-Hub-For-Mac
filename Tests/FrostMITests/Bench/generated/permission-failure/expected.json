@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "generated-permission-failure",
+  "kind": "generated-discovery",
+  "source": "frostmi-fingerprint-generator",
+  "licenseContext": "FrostMI-authored deterministic fixture.",
+  "scan": {
+    "home": "home",
+    "project": "project",
+    "protectedDirectories": ["project/protected"]
+  },
+  "expected": {
+    "agents": [
+      { "normalizedName": "unknown-terminal-agent-candidate", "minCount": 1, "minConfidence": 20 }
+    ],
+    "mcpServers": [],
+    "skills": [],
+    "contextFiles": [
+      { "pathSuffix": "project/AGENTS.md" }
+    ],
+    "memoryAssets": [],
+    "absentMCPServers": [],
+    "permissionEvidenceMinCount": 1
+  },
+  "knownLimitations": []
+}

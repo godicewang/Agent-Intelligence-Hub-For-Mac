@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "static-snyk-vscode",
+  "kind": "static-discovery",
+  "source": "snyk-agent-scan-inspired",
+  "licenseContext": "FrostMI-authored fixture inspired by Apache-2.0 Snyk agent-scan VS Code-family coverage; no Snyk business logic copied.",
+  "scan": {
+    "home": "home",
+    "project": "project"
+  },
+  "expected": {
+    "agents": [
+      { "normalizedName": "unknown-vscode-agent-extension", "minCount": 1, "minConfidence": 30 }
+    ],
+    "mcpServers": [
+      { "name": "vscode-user", "minCount": 1 }
+    ],
+    "skills": [
+      { "name": "vscode-helper", "minCount": 1 }
+    ],
+    "contextFiles": [
+      { "pathSuffix": "project/.vscode/settings.json" },
+      { "pathSuffix": "project/AGENTS.md" }
+    ],
+    "memoryAssets": [],
+    "absentMCPServers": [],
+    "permissionEvidenceMinCount": 0
+  },
+  "knownLimitations": []
+}

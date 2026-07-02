@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mixed-project": {
+      "command": "python",
+      "args": ["mixed_project_server.py"]
+    }
+  }
+}

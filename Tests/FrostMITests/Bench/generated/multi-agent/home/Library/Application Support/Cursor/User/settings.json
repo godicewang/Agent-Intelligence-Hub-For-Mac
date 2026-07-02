@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cursor-multi": {
+      "command": "node",
+      "args": ["cursor-multi.js"]
+    }
+  }
+}

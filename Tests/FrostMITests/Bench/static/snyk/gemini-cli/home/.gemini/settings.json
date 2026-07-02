@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gemini-user": {
+      "command": "node",
+      "args": ["gemini-server.js"]
+    }
+  }
+}

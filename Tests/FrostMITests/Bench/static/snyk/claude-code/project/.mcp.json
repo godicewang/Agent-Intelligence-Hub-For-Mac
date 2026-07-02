@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "project-claude": {
+      "command": "python",
+      "args": ["project_server.py"]
+    }
+  }
+}

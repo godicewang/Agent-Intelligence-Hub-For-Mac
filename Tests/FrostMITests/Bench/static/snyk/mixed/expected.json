@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "static-snyk-mixed",
+  "kind": "static-discovery",
+  "source": "snyk-agent-scan-inspired",
+  "licenseContext": "FrostMI-authored mixed-agent fixture inspired by Apache-2.0 Snyk agent-scan test coverage; no Snyk business logic copied.",
+  "scan": {
+    "home": "home",
+    "project": "project"
+  },
+  "expected": {
+    "agents": [
+      { "normalizedName": "claude-code", "minCount": 1, "minConfidence": 60 },
+      { "normalizedName": "codex-cli", "minCount": 1, "minConfidence": 60 },
+      { "normalizedName": "cursor", "minCount": 1, "minConfidence": 60 },
+      { "normalizedName": "gemini-cli", "minCount": 1, "minConfidence": 60 }
+    ],
+    "mcpServers": [
+      { "name": "shared-filesystem", "minCount": 2 },
+      { "name": "mixed-project", "minCount": 1 }
+    ],
+    "skills": [
+      { "name": "shared-review", "minCount": 1 }
+    ],
+    "contextFiles": [
+      { "pathSuffix": "project/AGENTS.md" },
+      { "pathSuffix": "project/CLAUDE.md" },
+      { "pathSuffix": "project/GEMINI.md" }
+    ],
+    "memoryAssets": [
+      { "pathSuffix": "home/.codex/session_index.jsonl" }
+    ],
+    "absentMCPServers": [],
+    "permissionEvidenceMinCount": 0
+  },
+  "knownLimitations": []
+}

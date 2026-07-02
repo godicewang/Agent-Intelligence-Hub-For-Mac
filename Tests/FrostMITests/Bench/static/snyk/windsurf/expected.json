@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "static-snyk-windsurf",
+  "kind": "static-discovery",
+  "source": "snyk-agent-scan-inspired",
+  "licenseContext": "FrostMI-authored fixture inspired by Apache-2.0 Snyk agent-scan Windsurf coverage; no Snyk business logic copied.",
+  "scan": {
+    "home": "home",
+    "project": "project"
+  },
+  "expected": {
+    "agents": [
+      { "normalizedName": "windsurf", "minCount": 1, "minConfidence": 60 }
+    ],
+    "mcpServers": [
+      { "name": "windsurf-user", "minCount": 1 },
+      { "name": "windsurf-project", "minCount": 1 }
+    ],
+    "skills": [
+      { "name": "cascade-plan", "minCount": 1 }
+    ],
+    "contextFiles": [
+      { "pathSuffix": "project/.windsurf/mcp.json" },
+      { "pathSuffix": "project/AGENTS.md" }
+    ],
+    "memoryAssets": [],
+    "absentMCPServers": [],
+    "permissionEvidenceMinCount": 0
+  },
+  "knownLimitations": []
+}

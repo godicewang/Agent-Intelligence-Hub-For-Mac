@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "sessionId": "fixture-session",
+  "nodes": [
+    { "id": "u1", "type": "UserPrompt" },
+    { "id": "a1", "type": "LLMResponse" },
+    { "id": "toolu_1", "type": "ToolCall" },
+    { "id": "t1", "type": "ToolResult" },
+    { "id": "a2", "type": "FinalResponse" }
+  ],
+  "edges": [
+    ["u1", "a1"],
+    ["a1", "toolu_1"],
+    ["toolu_1", "t1"],
+    ["t1", "a2"]
+  ]
+}

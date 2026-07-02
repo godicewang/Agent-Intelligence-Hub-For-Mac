@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "external-fable5-claude-code-traces",
+  "kind": "external-golden-dataset",
+  "source": "https://huggingface.co/datasets/AlinCiocan/fable-5-claude-code-traces",
+  "licenseContext": "Dataset metadata indicates CC-BY-4.0. Raw 18-session dataset is not committed until explicitly fetched and normalized.",
+  "expectedLocalLanding": "datasets/fable5-claude-code-traces/",
+  "validates": [
+    "Claude Code event parentUuid linkage",
+    "toolUseID to tool result joining",
+    "assistant/user/tool result ordering",
+    "high-fidelity session graph generation"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "claude-multi": {
+      "command": "node",
+      "args": ["claude-multi.js"]
+    }
+  }
+}

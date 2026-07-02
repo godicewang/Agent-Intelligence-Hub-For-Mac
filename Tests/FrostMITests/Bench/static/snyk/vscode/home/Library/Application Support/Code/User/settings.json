@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "vscode-user": {
+      "command": "node",
+      "args": ["vscode-user-server.js"]
+    }
+  }
+}

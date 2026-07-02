@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "external-swe-agent-trajectories-adapter",
+  "kind": "external-pressure-dataset",
+  "source": "SWE-agent trajectories",
+  "licenseContext": "Adapter placeholder only. Verify upstream license before importing data.",
+  "validates": [
+    "large trajectory parser pressure",
+    "long retry loops",
+    "failure and exit status handling",
+    "patch and test-log normalization"
+  ],
+  "landingPolicy": "Keep large raw trajectories under datasets/ and commit only reduced fixtures or expected summaries."
+}

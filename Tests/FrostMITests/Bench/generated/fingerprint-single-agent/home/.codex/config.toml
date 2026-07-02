@@ -1,0 +1,3 @@
+[mcp_servers.generated-codex]
+command = "node"
+args = ["generated-codex.js"]

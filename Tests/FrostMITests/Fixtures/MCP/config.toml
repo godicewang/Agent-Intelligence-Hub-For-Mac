@@ -1,7 +1,0 @@
-[mcp_servers.local]
-command = "uvx"
-args = ["remote-server"]
-
-[mcp_servers.http]
-transport = "http"
-url = "http://localhost:3000/mcp"

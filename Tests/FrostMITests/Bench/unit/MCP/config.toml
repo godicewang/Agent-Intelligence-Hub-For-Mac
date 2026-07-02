@@ -1,0 +1,7 @@
+[mcp_servers.local]
+command = "uvx"
+args = ["local-mcp"]
+
+[mcp_servers.http]
+url = "https://example.invalid/mcp"
+type = "http"

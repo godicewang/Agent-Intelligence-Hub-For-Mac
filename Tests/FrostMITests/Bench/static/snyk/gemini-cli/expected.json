@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "static-snyk-gemini-cli",
+  "kind": "static-discovery",
+  "source": "snyk-agent-scan-inspired",
+  "licenseContext": "FrostMI-authored fixture inspired by Apache-2.0 Snyk agent-scan Gemini CLI coverage; no Snyk business logic copied.",
+  "scan": {
+    "home": "home",
+    "project": "project"
+  },
+  "expected": {
+    "agents": [
+      { "normalizedName": "gemini-cli", "minCount": 1, "minConfidence": 60 }
+    ],
+    "mcpServers": [
+      { "name": "gemini-user", "minCount": 1 }
+    ],
+    "skills": [],
+    "contextFiles": [
+      { "pathSuffix": "project/GEMINI.md" }
+    ],
+    "memoryAssets": [
+      { "pathSuffix": "home/.gemini/history.jsonl" }
+    ],
+    "absentMCPServers": [],
+    "permissionEvidenceMinCount": 0
+  },
+  "knownLimitations": []
+}

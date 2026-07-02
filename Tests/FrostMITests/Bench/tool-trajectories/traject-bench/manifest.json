@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "external-traject-bench-adapter",
+  "kind": "external-tool-trajectory-dataset",
+  "source": "TRAJECT-Bench",
+  "licenseContext": "Adapter placeholder only. Verify upstream license before importing data.",
+  "validates": [
+    "tool selection",
+    "tool argument normalization",
+    "parallel tool calls",
+    "sequential tool calls",
+    "tool dependency ordering constraints"
+  ],
+  "landingPolicy": "Do not commit raw benchmark dumps; normalize into small expected graph fixtures or keep large data under datasets/."
+}

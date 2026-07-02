@@ -1,0 +1,3 @@
+[mcp_servers.duplicate-codex]
+command = "node"
+args = ["duplicate-codex.js"]

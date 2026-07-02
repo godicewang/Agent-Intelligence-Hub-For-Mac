@@ -81,7 +81,7 @@ The current FrostMI interface is centered on endpoint-native sensing for local A
   - Policy & Approval
   - Privacy Center
   - Settings
-- Real local Agent Discovery in Agent Sensing, including separate Codex CLI and Codex App recognition.
+- Real local Agent Discovery in Agent Sensing, including separate Codex CLI / Codex App recognition and Windsurf static discovery coverage.
 - Known Agent and custom Agent grouping.
 - MCP server config discovery without executing MCP server commands.
 - Skill discovery and lightweight pre-scan signals.
@@ -90,6 +90,7 @@ The current FrostMI interface is centered on endpoint-native sensing for local A
 - Finder path reveal for Agent, MCP, Skill, Context, and Memory assets.
 - Local JSONL export with Finder reveal.
 - Default local-first, no-exec, minimum-permission discovery flow.
+- Manifest-driven Agent Sensing test bench under `Tests/FrostMITests/Bench`.
 
 ## Search Keywords
 
@@ -127,7 +128,21 @@ Run the discovery self-test and bundled app resource check:
 Scripts/run_discovery_tests.sh
 ```
 
-The script runs Agent Discovery self-tests, builds `dist/FrostMI.app`, verifies bundled fingerprint resources, and runs self-tests through the packaged app. Current checks cover MCP config detection and false-positive control, Codex plugin MCP discovery, known agent fingerprints, targeted home/support-directory discovery, workspace scanning, Skill script signals, discovery source markers, cold-start snapshot replacement, JSONL export integrity, path resolver behavior, and minimum-permission boundaries.
+The script runs Agent Discovery self-tests, builds `dist/FrostMI.app`, verifies bundled fingerprint resources, and runs self-tests through the packaged app. Current checks cover MCP config detection and false-positive control, Codex plugin MCP discovery, known agent fingerprints, targeted home/support-directory discovery, workspace scanning, Skill script signals, discovery source markers, cold-start snapshot replacement, JSONL export integrity, path resolver behavior, minimum-permission boundaries, and manifest-driven bench fixtures.
+
+For the current full bench path:
+
+```bash
+Scripts/run_bench_tests.sh
+```
+
+The bench lives under `Tests/FrostMITests/Bench` and includes Snyk-inspired static discovery fixtures, FrostMI-generated edge cases, external dataset adapter manifests, a compact Claude trace graph sample, and a SHA256-pinned TraceLab downloader. Large external datasets are kept under git-ignored `datasets/`.
+
+To fetch the fixed TraceLab v0.0.1 JSONL dataset for future replay work:
+
+```bash
+Scripts/fetch_tracelab_dataset.sh
+```
 
 For local discovery debugging, run:
 

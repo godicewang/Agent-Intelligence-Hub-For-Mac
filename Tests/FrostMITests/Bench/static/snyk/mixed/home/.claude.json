@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "shared-filesystem": {
+      "command": "node",
+      "args": ["shared-server.js"]
+    }
+  }
+}

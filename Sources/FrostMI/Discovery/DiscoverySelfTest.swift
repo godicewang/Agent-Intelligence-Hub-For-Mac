@@ -18,6 +18,7 @@ enum DiscoverySelfTest {
         "codex-cli",
         "cursor",
         "trae",
+        "windsurf",
         "gemini-cli",
         "cline-roocode",
         "continue",
@@ -312,6 +313,13 @@ enum DiscoverySelfTest {
         && result.skills.contains { $0.path.contains(".claude/skills/home-skill") }
         && result.skills.contains { $0.path.contains(".cursor/skills-cursor/cursor-skill") }
         && result.skills.contains { $0.path.contains(".openclaw/skills/claw-skill") }
+    }
+
+    check(
+      "FrostMI bench manifests validate static and generated discovery fixtures",
+      failures: &failures
+    ) {
+      try validateDiscoveryBenchFixtures()
     }
 
     check("Cold start scanner follows known agent support roots", failures: &failures) {
@@ -817,8 +825,14 @@ enum DiscoverySelfTest {
 
   private static func fixture(_ relativePath: String) -> URL {
     URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-      .appendingPathComponent("Tests/FrostMITests/Fixtures", isDirectory: true)
+      .appendingPathComponent("Tests/FrostMITests/Bench/unit", isDirectory: true)
       .appendingPathComponent(relativePath)
+  }
+
+  private static func bench(_ relativePath: String = "") -> URL {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+      .appendingPathComponent("Tests/FrostMITests/Bench", isDirectory: true)
+    return relativePath.isEmpty ? root : root.appendingPathComponent(relativePath)
   }
 
   private static func temporaryDirectory(named name: String) throws -> URL {
@@ -842,6 +856,168 @@ enum DiscoverySelfTest {
     try FileManager.default.createDirectory(
       at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     try text.write(to: url, atomically: true, encoding: .utf8)
+  }
+
+  private static func validateDiscoveryBenchFixtures() throws -> Bool {
+    let manifestURLs = discoveryBenchManifestURLs()
+    guard !manifestURLs.isEmpty else {
+      throw BenchValidationError(messages: ["No discovery bench expected.json manifests found."])
+    }
+
+    var failures: [String] = []
+    for manifestURL in manifestURLs {
+      do {
+        try validateDiscoveryBenchManifest(manifestURL)
+      } catch {
+        failures.append("\(manifestURL.path): \(error.localizedDescription)")
+      }
+    }
+
+    if !failures.isEmpty {
+      throw BenchValidationError(messages: failures)
+    }
+    return true
+  }
+
+  private static func discoveryBenchManifestURLs() -> [URL] {
+    let roots = [bench("static"), bench("generated")]
+    var urls: [URL] = []
+    for root in roots where DiscoveryUtilities.directoryExists(root) {
+      guard
+        let enumerator = FileManager.default.enumerator(
+          at: root,
+          includingPropertiesForKeys: [.isRegularFileKey],
+          options: [.skipsHiddenFiles]
+        )
+      else { continue }
+      for case let url as URL in enumerator where url.lastPathComponent == "expected.json" {
+        urls.append(url)
+      }
+    }
+    return urls.sorted { $0.path < $1.path }
+  }
+
+  private static func validateDiscoveryBenchManifest(_ manifestURL: URL) throws {
+    let manifest = try JSONDecoder.frost.decode(
+      BenchDiscoveryManifest.self, from: Data(contentsOf: manifestURL))
+    let sourceRoot = manifestURL.deletingLastPathComponent()
+    let workingRoot = try temporaryDirectory(named: "Bench-\(manifest.id)")
+      .appendingPathComponent(sourceRoot.lastPathComponent, isDirectory: true)
+    try FileManager.default.copyItem(at: sourceRoot, to: workingRoot)
+
+    let home = workingRoot.appendingPathComponent(manifest.scan.home, isDirectory: true)
+    let project = workingRoot.appendingPathComponent(manifest.scan.project, isDirectory: true)
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+
+    var protectedDirectories: [URL] = []
+    for relativePath in manifest.scan.protectedDirectories {
+      let url = workingRoot.appendingPathComponent(relativePath, isDirectory: true)
+      if DiscoveryUtilities.directoryExists(url) {
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: url.path)
+        protectedDirectories.append(url)
+      }
+    }
+    defer {
+      for url in protectedDirectories {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+      }
+    }
+
+    let result = try discoveryBenchScan(home: home, project: project)
+    let expected = manifest.expected
+    var failures: [String] = []
+
+    for agent in expected.agents {
+      let matches = result.agents.filter { $0.normalizedName == agent.normalizedName }
+      let minCount = agent.minCount ?? 1
+      if matches.count < minCount {
+        failures.append(
+          "expected agent \(agent.normalizedName) count >= \(minCount), got \(matches.count)")
+      }
+      if let minConfidence = agent.minConfidence,
+        !matches.contains(where: { $0.confidence >= minConfidence })
+      {
+        failures.append(
+          "expected agent \(agent.normalizedName) confidence >= \(minConfidence)")
+      }
+    }
+
+    for server in expected.mcpServers {
+      let count = result.mcpServers.filter { $0.name == server.name }.count
+      let minCount = server.minCount ?? 1
+      if count < minCount {
+        failures.append("expected MCP \(server.name) count >= \(minCount), got \(count)")
+      }
+    }
+
+    for serverName in expected.absentMCPServers {
+      if result.mcpServers.contains(where: { $0.name == serverName }) {
+        failures.append("expected MCP \(serverName) to be absent")
+      }
+    }
+
+    for skill in expected.skills {
+      let count = result.skills.filter { $0.name == skill.name }.count
+      let minCount = skill.minCount ?? 1
+      if count < minCount {
+        failures.append("expected Skill \(skill.name) count >= \(minCount), got \(count)")
+      }
+    }
+
+    for path in expected.contextFiles {
+      if !path.matches(result.contextFiles.map(\.path)) {
+        failures.append("expected context path \(path.describe())")
+      }
+    }
+
+    for path in expected.memoryAssets {
+      if !path.matches(result.memories.map(\.path)) {
+        failures.append("expected memory path \(path.describe())")
+      }
+    }
+
+    let permissionEvidenceCount = result.evidence.filter { $0.evidenceType == .permission }.count
+    if permissionEvidenceCount < expected.permissionEvidenceMinCount {
+      failures.append(
+        "expected permission evidence >= \(expected.permissionEvidenceMinCount), got \(permissionEvidenceCount)"
+      )
+    }
+
+    if !failures.isEmpty {
+      throw BenchValidationError(messages: failures)
+    }
+  }
+
+  private static func discoveryBenchScan(home: URL, project: URL) throws -> DiscoveryScanResult {
+    let config = DiscoveryConfiguration(
+      homeDirectory: home,
+      projectRoot: project,
+      scanRoots: [project],
+      limits: ScanLimits(
+        maxDepth: 6, maxFileBytes: 128 * 1024, maxDirectoryEntries: 512,
+        maxScannedDirectories: 256, maxInspectedFiles: 1024, maxCollectedMemoryFiles: 128),
+      enableColdStartScan: true,
+      enableRuntimeObserver: false,
+      enableFSEventsWatcher: false,
+      enableEndpointSecurityMonitor: false,
+      enableNetworkMonitor: false,
+      enableUserApplicationSupportScan: false
+    )
+    let skillScanner = SkillScanner(limits: config.limits)
+    let memoryScanner = MemoryFileScanner(limits: config.limits)
+    var result = DiscoveryScanResult()
+    result.merge(
+      try KnownAgentScanner(
+        registry: .bundled(),
+        skillScanner: skillScanner,
+        memoryScanner: memoryScanner,
+        config: config
+      ).scan())
+    result.merge(
+      KeywordFileScanner(config: config, skillScanner: skillScanner, memoryScanner: memoryScanner)
+        .scan(additionalRoots: [project]))
+    return result
   }
 
   private static func preparedCodexProject() throws -> URL {
@@ -1010,5 +1186,126 @@ private final class SelfTestTemporaryDirectoryRegistry: @unchecked Sendable {
     for url in directories where url.lastPathComponent.hasPrefix("FrostMIDiscoverySelfTest-") {
       try? FileManager.default.removeItem(at: url)
     }
+  }
+}
+
+private struct BenchDiscoveryManifest: Decodable {
+  var schemaVersion: Int
+  var id: String
+  var kind: String
+  var source: String?
+  var licenseContext: String?
+  var scan: BenchScanSpec
+  var expected: BenchExpectedSpec
+  var knownLimitations: [String]
+
+  private enum CodingKeys: String, CodingKey {
+    case schemaVersion
+    case id
+    case kind
+    case source
+    case licenseContext
+    case scan
+    case expected
+    case knownLimitations
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+    id = try container.decode(String.self, forKey: .id)
+    kind = try container.decode(String.self, forKey: .kind)
+    source = try container.decodeIfPresent(String.self, forKey: .source)
+    licenseContext = try container.decodeIfPresent(String.self, forKey: .licenseContext)
+    scan = try container.decode(BenchScanSpec.self, forKey: .scan)
+    expected = try container.decode(BenchExpectedSpec.self, forKey: .expected)
+    knownLimitations = try container.decodeIfPresent([String].self, forKey: .knownLimitations) ?? []
+  }
+}
+
+private struct BenchScanSpec: Decodable {
+  var home: String
+  var project: String
+  var protectedDirectories: [String]
+
+  private enum CodingKeys: String, CodingKey {
+    case home
+    case project
+    case protectedDirectories
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    home = try container.decode(String.self, forKey: .home)
+    project = try container.decode(String.self, forKey: .project)
+    protectedDirectories =
+      try container.decodeIfPresent([String].self, forKey: .protectedDirectories) ?? []
+  }
+}
+
+private struct BenchExpectedSpec: Decodable {
+  var agents: [BenchExpectedAgent]
+  var mcpServers: [BenchExpectedNamedItem]
+  var skills: [BenchExpectedNamedItem]
+  var contextFiles: [BenchExpectedPathItem]
+  var memoryAssets: [BenchExpectedPathItem]
+  var absentMCPServers: [String]
+  var permissionEvidenceMinCount: Int
+
+  private enum CodingKeys: String, CodingKey {
+    case agents
+    case mcpServers
+    case skills
+    case contextFiles
+    case memoryAssets
+    case absentMCPServers
+    case permissionEvidenceMinCount
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    agents = try container.decodeIfPresent([BenchExpectedAgent].self, forKey: .agents) ?? []
+    mcpServers =
+      try container.decodeIfPresent([BenchExpectedNamedItem].self, forKey: .mcpServers) ?? []
+    skills = try container.decodeIfPresent([BenchExpectedNamedItem].self, forKey: .skills) ?? []
+    contextFiles =
+      try container.decodeIfPresent([BenchExpectedPathItem].self, forKey: .contextFiles) ?? []
+    memoryAssets =
+      try container.decodeIfPresent([BenchExpectedPathItem].self, forKey: .memoryAssets) ?? []
+    absentMCPServers =
+      try container.decodeIfPresent([String].self, forKey: .absentMCPServers) ?? []
+    permissionEvidenceMinCount =
+      try container.decodeIfPresent(Int.self, forKey: .permissionEvidenceMinCount) ?? 0
+  }
+}
+
+private struct BenchExpectedAgent: Decodable {
+  var normalizedName: String
+  var minCount: Int?
+  var minConfidence: Int?
+}
+
+private struct BenchExpectedNamedItem: Decodable {
+  var name: String
+  var minCount: Int?
+}
+
+private struct BenchExpectedPathItem: Decodable {
+  var pathSuffix: String
+
+  func matches(_ paths: [String]) -> Bool {
+    paths.contains { $0.hasSuffix(pathSuffix) }
+  }
+
+  func describe() -> String {
+    pathSuffix
+  }
+}
+
+private struct BenchValidationError: LocalizedError {
+  var messages: [String]
+
+  var errorDescription: String? {
+    messages.joined(separator: "; ")
   }
 }

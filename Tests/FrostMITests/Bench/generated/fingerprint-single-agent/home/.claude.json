@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "generated-claude": {
+      "command": "node",
+      "args": [
+        "generated-claude.js"
+      ]
+    }
+  }
+}

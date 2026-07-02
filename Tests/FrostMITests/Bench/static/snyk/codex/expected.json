@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "static-snyk-codex",
+  "kind": "static-discovery",
+  "source": "snyk-agent-scan-inspired",
+  "licenseContext": "FrostMI-authored fixture inspired by Apache-2.0 Snyk agent-scan Codex coverage; no Snyk business logic copied.",
+  "scan": {
+    "home": "home",
+    "project": "project"
+  },
+  "expected": {
+    "agents": [
+      { "normalizedName": "codex-cli", "minCount": 1, "minConfidence": 60 },
+      { "normalizedName": "codex-app", "minCount": 1, "minConfidence": 80 }
+    ],
+    "mcpServers": [
+      { "name": "codex-user", "minCount": 1 },
+      { "name": "codex-project", "minCount": 1 }
+    ],
+    "skills": [
+      { "name": "codex-audit", "minCount": 1 }
+    ],
+    "contextFiles": [
+      { "pathSuffix": "project/AGENTS.md" },
+      { "pathSuffix": "project/.codex/config.toml" }
+    ],
+    "memoryAssets": [
+      { "pathSuffix": "home/.codex/session_index.jsonl" }
+    ],
+    "absentMCPServers": [],
+    "permissionEvidenceMinCount": 0
+  },
+  "knownLimitations": []
+}

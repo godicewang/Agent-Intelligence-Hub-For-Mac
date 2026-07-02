@@ -1,0 +1,4 @@
+{"type":"user","sessionId":"fixture-session","uuid":"u1","parentUuid":null,"timestamp":"2026-01-01T00:00:00Z","message":{"role":"user","content":"inspect the project"}}
+{"type":"assistant","sessionId":"fixture-session","uuid":"a1","parentUuid":"u1","timestamp":"2026-01-01T00:00:01Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"ls"}}]}}
+{"type":"tool_result","sessionId":"fixture-session","uuid":"t1","parentUuid":"a1","timestamp":"2026-01-01T00:00:02Z","toolUseID":"toolu_1","command":"ls","exitCode":0,"durationMs":12}
+{"type":"assistant","sessionId":"fixture-session","uuid":"a2","parentUuid":"t1","timestamp":"2026-01-01T00:00:03Z","message":{"role":"assistant","content":"done"}}

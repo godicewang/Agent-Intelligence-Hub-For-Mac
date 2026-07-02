@@ -1,0 +1,3 @@
+[mcp_servers.single-codex]
+command = "node"
+args = ["single-server.js"]

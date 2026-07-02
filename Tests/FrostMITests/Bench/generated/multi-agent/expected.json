@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "generated-multi-agent",
+  "kind": "generated-discovery",
+  "source": "frostmi-fingerprint-generator",
+  "licenseContext": "FrostMI-authored deterministic fixture.",
+  "scan": {
+    "home": "home",
+    "project": "project"
+  },
+  "expected": {
+    "agents": [
+      { "normalizedName": "claude-code", "minCount": 1, "minConfidence": 60 },
+      { "normalizedName": "codex-cli", "minCount": 1, "minConfidence": 60 },
+      { "normalizedName": "cursor", "minCount": 1, "minConfidence": 60 },
+      { "normalizedName": "gemini-cli", "minCount": 1, "minConfidence": 60 }
+    ],
+    "mcpServers": [
+      { "name": "claude-multi", "minCount": 1 },
+      { "name": "codex-multi", "minCount": 1 },
+      { "name": "cursor-multi", "minCount": 1 },
+      { "name": "gemini-multi", "minCount": 1 }
+    ],
+    "skills": [
+      { "name": "multi-review", "minCount": 1 }
+    ],
+    "contextFiles": [
+      { "pathSuffix": "project/AGENTS.md" },
+      { "pathSuffix": "project/CLAUDE.md" },
+      { "pathSuffix": "project/GEMINI.md" }
+    ],
+    "memoryAssets": [],
+    "absentMCPServers": [],
+    "permissionEvidenceMinCount": 0
+  },
+  "knownLimitations": []
+}

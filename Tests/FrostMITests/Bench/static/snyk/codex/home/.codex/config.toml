@@ -1,0 +1,3 @@
+[mcp_servers.codex-user]
+command = "node"
+args = ["codex-user-server.js"]

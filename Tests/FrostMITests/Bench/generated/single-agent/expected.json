@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "generated-single-agent",
+  "kind": "generated-discovery",
+  "source": "frostmi-fingerprint-generator",
+  "licenseContext": "FrostMI-authored deterministic fixture.",
+  "scan": {
+    "home": "home",
+    "project": "project"
+  },
+  "expected": {
+    "agents": [
+      { "normalizedName": "codex-cli", "minCount": 1, "minConfidence": 60 }
+    ],
+    "mcpServers": [
+      { "name": "single-codex", "minCount": 1 }
+    ],
+    "skills": [],
+    "contextFiles": [
+      { "pathSuffix": "project/AGENTS.md" }
+    ],
+    "memoryAssets": [
+      { "pathSuffix": "home/.codex/session_index.jsonl" }
+    ],
+    "absentMCPServers": [],
+    "permissionEvidenceMinCount": 0
+  },
+  "knownLimitations": []
+}

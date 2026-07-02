@@ -150,6 +150,31 @@
     }
   },
   {
+    "displayName": "Windsurf",
+    "normalizedName": "windsurf",
+    "vendor": "Codeium",
+    "agentType": "desktop",
+    "processNames": ["Windsurf"],
+    "installPaths": ["~/.codeium/windsurf", "~/.codeium", "/Applications/Windsurf.app", "~/Library/Application Support/Windsurf"],
+    "configPaths": ["~/.codeium/windsurf/mcp_config.json", "~/Library/Application Support/Windsurf/User/settings.json"],
+    "projectMarkers": [".windsurf/mcp.json", ".windsurf/skills", ".mcp.json", "AGENTS.md"],
+    "mcpConfigPaths": ["~/.codeium/windsurf/mcp_config.json", "~/Library/Application Support/Windsurf/User/settings.json"],
+    "skillPaths": ["~/.codeium/windsurf/skills", "~/.agents/skills", "~/.claude/skills"],
+    "cachePaths": ["~/.codeium/windsurf", "~/Library/Application Support/Windsurf"],
+    "extensionPaths": ["~/.windsurf/extensions"],
+    "memoryPaths": ["~/.codeium/windsurf"],
+    "confidenceWeights": {
+      "installPath": 35,
+      "configPath": 30,
+      "process": 30,
+      "projectMarker": 25,
+      "mcpConfig": 20,
+      "skill": 20,
+      "cache": 10,
+      "memory": 10
+    }
+  },
+  {
     "displayName": "Gemini CLI",
     "normalizedName": "gemini-cli",
     "vendor": "Google",

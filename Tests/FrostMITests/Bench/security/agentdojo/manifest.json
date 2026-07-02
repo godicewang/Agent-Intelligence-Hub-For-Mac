@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "external-agentdojo-adapter",
+  "kind": "external-security-dataset",
+  "source": "AgentDojo",
+  "licenseContext": "Adapter placeholder only. Verify upstream license before importing data.",
+  "validates": [
+    "normal tool flow",
+    "tool-result prompt injection",
+    "user goal versus attacker goal separation",
+    "untrusted data entering later model turns",
+    "sensitive information exfiltration chains"
+  ],
+  "landingPolicy": "Prefer parsing committed run results into FrostMI normalized events before running live model benchmarks."
+}

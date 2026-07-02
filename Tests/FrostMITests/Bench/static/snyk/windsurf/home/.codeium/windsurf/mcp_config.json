@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "windsurf-user": {
+      "command": "node",
+      "args": ["windsurf-user-server.js"]
+    }
+  }
+}

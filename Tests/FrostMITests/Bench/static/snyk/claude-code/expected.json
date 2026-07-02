@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "static-snyk-claude-code",
+  "kind": "static-discovery",
+  "source": "snyk-agent-scan-inspired",
+  "licenseContext": "FrostMI-authored fixture inspired by Apache-2.0 Snyk agent-scan test directory patterns; no Snyk business logic copied.",
+  "scan": {
+    "home": "home",
+    "project": "project"
+  },
+  "expected": {
+    "agents": [
+      { "normalizedName": "claude-code", "minCount": 1, "minConfidence": 60 }
+    ],
+    "mcpServers": [
+      { "name": "filesystem", "minCount": 1 },
+      { "name": "project-claude", "minCount": 1 }
+    ],
+    "skills": [
+      { "name": "code-review", "minCount": 1 }
+    ],
+    "contextFiles": [
+      { "pathSuffix": "project/CLAUDE.md" },
+      { "pathSuffix": "project/.mcp.json" }
+    ],
+    "memoryAssets": [
+      { "pathSuffix": "home/.claude/projects/session.jsonl" }
+    ],
+    "absentMCPServers": [],
+    "permissionEvidenceMinCount": 0
+  },
+  "knownLimitations": []
+}

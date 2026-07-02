@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cursor-workspace": {
+      "command": "node",
+      "args": ["workspace-server.js"]
+    }
+  }
+}

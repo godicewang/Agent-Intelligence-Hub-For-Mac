@@ -1,0 +1,3 @@
+[mcp_servers.codex-multi]
+command = "node"
+args = ["codex-multi.js"]

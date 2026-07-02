@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "generated-unknown-custom-agent",
+  "kind": "generated-discovery",
+  "source": "frostmi-fingerprint-generator",
+  "licenseContext": "FrostMI-authored deterministic fixture.",
+  "scan": {
+    "home": "home",
+    "project": "project"
+  },
+  "expected": {
+    "agents": [
+      { "normalizedName": "unknown-terminal-agent-candidate", "minCount": 1, "minConfidence": 20 },
+      { "normalizedName": "workspace-agent-context", "minCount": 1, "minConfidence": 20 }
+    ],
+    "mcpServers": [
+      { "name": "custom-agent-tools", "minCount": 1 }
+    ],
+    "skills": [
+      { "name": "local-custom-agent", "minCount": 1 }
+    ],
+    "contextFiles": [
+      { "pathSuffix": "project/AGENTS.md" }
+    ],
+    "memoryAssets": [
+      { "pathSuffix": "project/memory/session.jsonl" }
+    ],
+    "absentMCPServers": [],
+    "permissionEvidenceMinCount": 0
+  },
+  "knownLimitations": []
+}

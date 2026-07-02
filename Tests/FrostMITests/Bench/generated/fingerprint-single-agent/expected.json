@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "id": "generated-fingerprint-single-agent",
+  "kind": "generated-discovery",
+  "source": "frostmi-fingerprint-generator",
+  "licenseContext": "FrostMI-authored deterministic fixture generated from local fingerprints.",
+  "scan": {
+    "home": "home",
+    "project": "project"
+  },
+  "expected": {
+    "agents": [
+      {
+        "normalizedName": "claude-code",
+        "minCount": 1,
+        "minConfidence": 50
+      },
+      {
+        "normalizedName": "codex-cli",
+        "minCount": 1,
+        "minConfidence": 60
+      }
+    ],
+    "mcpServers": [
+      {
+        "name": "generated-claude",
+        "minCount": 1
+      },
+      {
+        "name": "generated-codex",
+        "minCount": 1
+      }
+    ],
+    "skills": [],
+    "contextFiles": [
+      {
+        "pathSuffix": "project/AGENTS.md"
+      }
+    ],
+    "memoryAssets": [],
+    "absentMCPServers": [],
+    "permissionEvidenceMinCount": 0
+  },
+  "knownLimitations": [
+    "This generated fixture is intentionally narrow; edge cases live in sibling generated scenarios."
+  ]
+}

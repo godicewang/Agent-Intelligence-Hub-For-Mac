@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "custom-agent-tools": {
+      "command": "python",
+      "args": ["tools.py"]
+    }
+  }
+}

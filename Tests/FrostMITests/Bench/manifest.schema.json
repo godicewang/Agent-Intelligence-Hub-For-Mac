@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FrostMI discovery bench manifest",
+  "type": "object",
+  "required": ["schemaVersion", "id", "kind", "scan", "expected"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "id": { "type": "string" },
+    "kind": { "type": "string" },
+    "source": { "type": "string" },
+    "licenseContext": { "type": "string" },
+    "scan": {
+      "type": "object",
+      "required": ["home", "project"],
+      "properties": {
+        "home": { "type": "string" },
+        "project": { "type": "string" },
+        "protectedDirectories": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "required": ["agents", "mcpServers", "skills", "contextFiles", "memoryAssets"],
+      "properties": {
+        "agents": { "type": "array" },
+        "mcpServers": { "type": "array" },
+        "skills": { "type": "array" },
+        "contextFiles": { "type": "array" },
+        "memoryAssets": { "type": "array" },
+        "absentMCPServers": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "permissionEvidenceMinCount": { "type": "integer" }
+      }
+    },
+    "knownLimitations": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

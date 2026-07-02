@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gemini-mixed": {
+      "command": "node",
+      "args": ["gemini-mixed.js"]
+    }
+  }
+}

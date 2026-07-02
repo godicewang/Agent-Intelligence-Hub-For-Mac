@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "static-snyk-cursor",
+  "kind": "static-discovery",
+  "source": "snyk-agent-scan-inspired",
+  "licenseContext": "FrostMI-authored fixture inspired by Apache-2.0 Snyk agent-scan Cursor coverage; no Snyk business logic copied.",
+  "scan": {
+    "home": "home",
+    "project": "project"
+  },
+  "expected": {
+    "agents": [
+      { "normalizedName": "cursor", "minCount": 1, "minConfidence": 60 }
+    ],
+    "mcpServers": [
+      { "name": "cursor-user", "minCount": 1 },
+      { "name": "cursor-workspace", "minCount": 1 }
+    ],
+    "skills": [
+      { "name": "cursor-review", "minCount": 1 }
+    ],
+    "contextFiles": [
+      { "pathSuffix": "project/.cursor/mcp.json" },
+      { "pathSuffix": "project/AGENTS.md" }
+    ],
+    "memoryAssets": [
+      { "pathSuffix": "home/Library/Application Support/Cursor/User/globalStorage/cursor-history.jsonl" }
+    ],
+    "absentMCPServers": [],
+    "permissionEvidenceMinCount": 0
+  },
+  "knownLimitations": []
+}

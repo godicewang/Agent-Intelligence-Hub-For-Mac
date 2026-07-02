@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cursor-user": {
+      "command": "node",
+      "args": ["cursor-user-server.js"]
+    }
+  }
+}
