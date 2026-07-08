@@ -45,7 +45,9 @@ struct PageHeader: View {
 struct PageHeader_Previews: PreviewProvider {
   static var previews: some View {
     PageHeader(
-      title: "Overview", subtitle: "Mac endpoint intelligence posture.", path: "FrostMI / Overview"
+      title: "Agent Sensing",
+      subtitle: "Local AI agent, MCP, Skill, Context, and Memory sensing.",
+      path: "FrostMI / Agent Sensing"
     )
     .padding()
   }

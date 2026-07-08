@@ -1,18 +1,16 @@
 import SwiftUI
 
 struct RootView: View {
-  @State private var selectedRoute: FrostRoute = .overview
-
   var body: some View {
     HStack(spacing: 0) {
-      SidebarView(selection: $selectedRoute)
+      SidebarView()
         .frame(width: 272)
 
       Rectangle()
         .fill(FrostTheme.sidebarDivider)
         .frame(width: 1)
 
-      selectedRoute.destination
+      AgentScanView()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(FrostTheme.pageBackground)
     }

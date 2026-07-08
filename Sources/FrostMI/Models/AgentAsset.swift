@@ -123,8 +123,6 @@ enum RiskLevel: String, Codable, CaseIterable, Hashable {
   case critical
 }
 
-typealias AgentRiskLevel = RiskLevel
-
 extension AgentAsset {
   mutating func merge(with other: AgentAsset) {
     displayName = displayName.isEmpty ? other.displayName : displayName

@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct SidebarView: View {
-  @Binding var selection: FrostRoute
-
   var body: some View {
     VStack(spacing: 0) {
       brandHeader
@@ -15,17 +13,8 @@ struct SidebarView: View {
           .padding(.horizontal, 14)
           .padding(.top, 14)
 
-        VStack(spacing: 6) {
-          ForEach(FrostRoute.allCases) { route in
-            SidebarItem(
-              route: route,
-              isSelected: route == selection
-            ) {
-              selection = route
-            }
-          }
-        }
-        .padding(.horizontal, 12)
+        agentSensingItem
+          .padding(.horizontal, 12)
       }
       .frame(maxWidth: .infinity, alignment: .topLeading)
 
@@ -85,19 +74,46 @@ struct SidebarView: View {
     )
   }
 
+  private var agentSensingItem: some View {
+    HStack(spacing: 10) {
+      Image(systemName: "scope")
+        .font(.system(size: 15, weight: .bold))
+        .frame(width: 22)
+        .foregroundStyle(FrostTheme.accent)
+
+      Text("Agent Sensing")
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundStyle(.white)
+        .lineLimit(1)
+
+      Spacer()
+    }
+    .padding(.horizontal, 12)
+    .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+    .background(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .fill(FrostTheme.sidebarSelection)
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(FrostTheme.accent.opacity(0.44), lineWidth: 1)
+    )
+    .help("Agent Sensing")
+  }
+
   private var endpointStatus: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack {
-        Label("Local Intelligence", systemImage: "brain.head.profile")
+        Label("Agent Sensing", systemImage: "scope")
           .font(.system(size: 12, weight: .semibold))
           .foregroundStyle(FrostTheme.sidebarMutedText)
 
         Spacer()
 
-        StatusBadge(label: "待接入", tone: .neutral)
+        StatusBadge(label: "本地", tone: .info)
       }
 
-      Text("本机感知、Memory、Prompt Copilot 待接入")
+      Text("本机 Agent、MCP、Skill、Context 和 Memory 感知")
         .font(.system(size: 12))
         .foregroundStyle(FrostTheme.sidebarMutedText)
     }
@@ -114,62 +130,9 @@ struct SidebarView: View {
   }
 }
 
-private struct SidebarItem: View {
-  let route: FrostRoute
-  let isSelected: Bool
-  let action: () -> Void
-  @State private var isHovered = false
-
-  var body: some View {
-    Button(action: action) {
-      HStack(spacing: 10) {
-        Image(systemName: route.systemImage)
-          .font(.system(size: 15, weight: .bold))
-          .frame(width: 22)
-          .foregroundStyle(isSelected ? FrostTheme.accent : FrostTheme.sidebarMutedText)
-
-        Text(route.title)
-          .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-          .foregroundStyle(isSelected ? .white : FrostTheme.sidebarText)
-          .lineLimit(1)
-          .truncationMode(.tail)
-
-        Spacer()
-      }
-      .padding(.horizontal, 12)
-      .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
-      .contentShape(Rectangle())
-      .background(
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .fill(background)
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .stroke(
-            isSelected
-              ? FrostTheme.accent.opacity(0.44) : Color.white.opacity(isHovered ? 0.10 : 0),
-            lineWidth: 1)
-      )
-    }
-    .buttonStyle(.plain)
-    .help(route.title)
-    .onHover { isHovered = $0 }
-  }
-
-  private var background: Color {
-    if isSelected {
-      FrostTheme.sidebarSelection
-    } else if isHovered {
-      FrostTheme.sidebarHover
-    } else {
-      Color.clear
-    }
-  }
-}
-
 struct SidebarView_Previews: PreviewProvider {
   static var previews: some View {
-    SidebarView(selection: .constant(.overview))
+    SidebarView()
       .frame(width: 256, height: 760)
   }
 }

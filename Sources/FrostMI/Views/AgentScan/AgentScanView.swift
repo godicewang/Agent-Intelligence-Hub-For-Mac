@@ -251,7 +251,7 @@ struct AgentScanView: View {
     FrostDetailLayout(detailWidth: 380) {
       VStack(alignment: .leading, spacing: 18) {
         if isDiscoveryEmpty && !viewModel.isScanning {
-          emptyOverview
+          emptySensingState
         } else {
           commonAgentsSection
             .id(AgentScanSection.agents)
@@ -316,7 +316,7 @@ struct AgentScanView: View {
     showsLowConfidenceCommonAgents ? commonAgents : highConfidenceCommonAgents
   }
 
-  private var emptyOverview: some View {
+  private var emptySensingState: some View {
     FrostCard("真实空状态", subtitle: "No local intelligence assets discovered") {
       EmptyStateView(
         title: "未发现本机 Agent 资产",

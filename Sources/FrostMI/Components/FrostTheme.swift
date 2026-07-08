@@ -8,9 +8,7 @@ enum FrostTheme {
   static let sidebarBackground = Color(red: 0.038, green: 0.044, blue: 0.050)
   static let sidebarSurface = Color(red: 0.064, green: 0.075, blue: 0.082)
   static let sidebarSelection = Color(red: 0.085, green: 0.135, blue: 0.142)
-  static let sidebarHover = Color.white.opacity(0.052)
   static let sidebarDivider = Color.black.opacity(0.44)
-  static let sidebarText = Color.white.opacity(0.86)
   static let sidebarMutedText = Color.white.opacity(0.58)
 
   static var pageBackground: Color {
