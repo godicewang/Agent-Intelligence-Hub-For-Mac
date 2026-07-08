@@ -101,7 +101,7 @@ final class RuntimeAgentObserver {
   @MainActor
   func refreshProcesses(onUpdate: @escaping @MainActor (DiscoverySnapshot) -> Void) {
     do {
-      let snapshot = try store.merge(processInspector.inspectRunningProcesses())
+      let snapshot = try store.replaceRuntimeObservation(processInspector.inspectRunningProcesses())
       onUpdate(snapshot)
     } catch {
       // Runtime observation errors are surfaced through persisted events during cold scans.

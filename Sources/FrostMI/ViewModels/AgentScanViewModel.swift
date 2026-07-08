@@ -61,11 +61,15 @@ enum DiscoveryPathResolver {
 final class AgentScanViewModel: ObservableObject {
   @Published var snapshot: DiscoverySnapshot = .empty
   @Published var isScanning = false
+  @Published var isRuntimeRefreshing = false
+  @Published var isRuntimeMonitoring = false
+  @Published var lastRuntimeRefreshedAt: Date?
   @Published var errorMessage: String?
   @Published var configuration: DiscoveryConfiguration = .default()
 
   private let service: AgentDiscoveryService?
   private var hasStarted = false
+  private var runtimeRefreshTask: Task<Void, Never>?
   private var cancellables: Set<AnyCancellable> = []
 
   init() {
@@ -95,6 +99,7 @@ final class AgentScanViewModel: ObservableObject {
     Task {
       await service.start()
       bind(from: service)
+      startRuntimeRefreshLoop()
     }
   }
 
@@ -112,6 +117,15 @@ final class AgentScanViewModel: ObservableObject {
       NSWorkspace.shared.activateFileViewerSelecting([url])
     }
     bind(from: service)
+  }
+
+  func refreshRuntimeNow() {
+    guard let service, !isRuntimeRefreshing else { return }
+    isRuntimeRefreshing = true
+    service.refreshRuntimeObservation()
+    bind(from: service)
+    lastRuntimeRefreshedAt = Date()
+    isRuntimeRefreshing = false
   }
 
   @discardableResult
@@ -168,6 +182,19 @@ final class AgentScanViewModel: ObservableObject {
     errorMessage = service.lastError
   }
 
+  private func startRuntimeRefreshLoop() {
+    guard configuration.enableRuntimeObserver, runtimeRefreshTask == nil else { return }
+    isRuntimeMonitoring = true
+    runtimeRefreshTask = Task { [weak self] in
+      while !Task.isCancelled {
+        await MainActor.run {
+          self?.refreshRuntimeNow()
+        }
+        try? await Task.sleep(nanoseconds: 5_000_000_000)
+      }
+    }
+  }
+
   private func rootPathCandidates(for agent: AgentAsset) -> [String] {
     agent.workspacePaths
       + agent.installPaths
@@ -178,4 +205,7 @@ final class AgentScanViewModel: ObservableObject {
       + agent.executablePaths
   }
 
+  deinit {
+    runtimeRefreshTask?.cancel()
+  }
 }

@@ -137,10 +137,13 @@ enum PrivacySensitivity: String, Codable, CaseIterable, Hashable {
 
 struct RuntimeProcessAsset: Identifiable, Codable, Hashable {
   var id: UUID
+  var sourceAgentId: UUID?
   var pid: Int32
   var ppid: Int32
   var processName: String
   var executablePath: String?
+  var bundleIdentifier: String?
+  var bundlePath: String?
   var argv: [String]
   var cwd: String?
   var parentChain: [String]
@@ -154,10 +157,13 @@ struct RuntimeProcessAsset: Identifiable, Codable, Hashable {
 
   init(
     id: UUID = UUID(),
+    sourceAgentId: UUID? = nil,
     pid: Int32,
     ppid: Int32,
     processName: String,
     executablePath: String? = nil,
+    bundleIdentifier: String? = nil,
+    bundlePath: String? = nil,
     argv: [String] = [],
     cwd: String? = nil,
     parentChain: [String] = [],
@@ -170,10 +176,13 @@ struct RuntimeProcessAsset: Identifiable, Codable, Hashable {
     lastSeenAt: Date = Date()
   ) {
     self.id = id
+    self.sourceAgentId = sourceAgentId
     self.pid = pid
     self.ppid = ppid
     self.processName = processName
     self.executablePath = executablePath
+    self.bundleIdentifier = bundleIdentifier
+    self.bundlePath = bundlePath
     self.argv = argv
     self.cwd = cwd
     self.parentChain = parentChain
@@ -269,6 +278,10 @@ extension DiscoveryScanResult {
 }
 
 extension DiscoveryEvent {
+  static let runtimeProcessSnapshotId = UUID(
+    uuidString: "00000000-0000-0000-0000-000000000201"
+  )!
+
   var isColdStartCompletionEvent: Bool {
     let lower = message.lowercased()
     return lower.contains("completed")

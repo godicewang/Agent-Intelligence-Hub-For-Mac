@@ -85,6 +85,16 @@ final class FrostDatabase {
     try execute("DELETE FROM records;")
   }
 
+  func delete(kind: RecordKind) throws {
+    let sql = "DELETE FROM records WHERE kind = ?;"
+    try withStatement(sql) { statement in
+      sqlite3_bind_text(statement, 1, kind.rawValue, -1, sqliteTransient)
+      guard sqlite3_step(statement) == SQLITE_DONE else {
+        throw StorageError.executeFailed(errorMessage)
+      }
+    }
+  }
+
   func execute(_ sql: String) throws {
     guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
       throw StorageError.executeFailed(errorMessage)

@@ -102,6 +102,16 @@ final class AgentDiscoveryService: ObservableObject {
     }
   }
 
+  func refreshRuntimeObservation() {
+    runtimeObserver.refreshProcesses { [weak self] snapshot in
+      self?.snapshot = snapshot
+    }
+  }
+
+  func stopRuntimeObservation() {
+    runtimeObserver.stop()
+  }
+
   private func runScannerInBackground() async -> DiscoveryScanResult {
     let scanner = self.scanner
     let timeout = max(1, configuration.limits.maxScanSeconds + 2)

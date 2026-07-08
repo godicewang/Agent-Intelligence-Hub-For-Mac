@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 final class ProcessInspector {
@@ -16,23 +17,36 @@ final class ProcessInspector {
 
   func inspectRunningProcesses(deadline: Date? = nil) -> DiscoveryScanResult {
     guard !isExpired(deadline) else { return DiscoveryScanResult() }
-    return inspect(observations: processRows(timeout: 2), deadline: deadline)
+    let rows = runtimeProcessRows(timeout: 2)
+    var result = inspect(observations: rows, deadline: deadline)
+    result.events.append(
+      DiscoveryEvent(
+        id: DiscoveryEvent.runtimeProcessSnapshotId,
+        kind: .processObservation,
+        path: nil,
+        message:
+          "Runtime process snapshot inspected \(rows.count) processes and matched \(result.runtimeProcesses.count) agent-like runtime processes.",
+        createdAt: Date()
+      ))
+    return result
   }
 
   func inspect(observations rows: [ProcessObservation], deadline: Date? = nil)
     -> DiscoveryScanResult
   {
     var result = DiscoveryScanResult()
+    let rowsByPID = Dictionary(uniqueKeysWithValues: rows.map { ($0.pid, $0) })
     for row in rows {
       guard !isExpired(deadline) else { break }
-      result.merge(knownProcessResult(for: row))
+      let parentChain = parentChain(for: row, rowsByPID: rowsByPID)
+      result.merge(knownProcessResult(for: row, parentChain: parentChain))
 
       let input = BehaviorFingerprintInput(
         processName: URL(fileURLWithPath: row.command).lastPathComponent,
         executablePath: row.command,
         argv: [row.arguments],
         cwd: nil,
-        parentChain: [],
+        parentChain: parentChain,
         connectedLLMProviders: providers(in: row.arguments),
         spawnedCommandCount: commandScore(in: row.arguments),
         workspaceTouched: workspace(in: row.arguments),
@@ -50,13 +64,19 @@ final class ProcessInspector {
       let behavior = behaviorEngine.evaluate(input)
       guard behavior.score >= 40 else { continue }
 
+      let agentId = UUID()
+      let processName = URL(fileURLWithPath: row.command).lastPathComponent
       let runtime = RuntimeProcessAsset(
+        sourceAgentId: agentId,
         pid: row.pid,
         ppid: row.ppid,
-        processName: URL(fileURLWithPath: row.command).lastPathComponent,
+        processName: processName,
         executablePath: row.command,
+        bundleIdentifier: row.bundleIdentifier,
+        bundlePath: row.bundlePath,
         argv: [DiscoveryUtilities.sanitizeArgument(row.arguments)],
         cwd: input.cwd,
+        parentChain: parentChain,
         connectedLLMProviders: input.connectedLLMProviders,
         spawnedCommandCount: input.spawnedCommandCount,
         workspaceTouched: input.workspaceTouched,
@@ -65,6 +85,7 @@ final class ProcessInspector {
       result.runtimeProcesses.append(runtime)
 
       let agent = AgentAsset(
+        id: agentId,
         displayName: "Runtime Agent Candidate: \(runtime.processName)",
         normalizedName: "runtime-\(runtime.processName.normalizedAssetName)-\(runtime.pid)",
         agentType: behavior.score >= 60 ? .customTerminal : .unknownCandidate,
@@ -94,7 +115,9 @@ final class ProcessInspector {
     return result
   }
 
-  private func knownProcessResult(for row: ProcessObservation) -> DiscoveryScanResult {
+  private func knownProcessResult(for row: ProcessObservation, parentChain: [String])
+    -> DiscoveryScanResult
+  {
     var result = DiscoveryScanResult()
     guard let registry else { return result }
 
@@ -125,6 +148,22 @@ final class ProcessInspector {
         metadataSummary: "Running process matched known fingerprint: \(processName)"
       )
       result.agents.append(agent)
+      result.runtimeProcesses.append(
+        RuntimeProcessAsset(
+          sourceAgentId: agent.id,
+          pid: row.pid,
+          ppid: row.ppid,
+          processName: processName,
+          executablePath: observedExecutablePath(for: row),
+          bundleIdentifier: row.bundleIdentifier,
+          bundlePath: row.bundlePath,
+          argv: [DiscoveryUtilities.sanitizeArgument(row.arguments)],
+          parentChain: parentChain,
+          connectedLLMProviders: providers(in: row.arguments),
+          spawnedCommandCount: commandScore(in: row.arguments),
+          workspaceTouched: workspace(in: row.arguments),
+          agentCandidateScore: confidence
+        ))
       result.evidence.append(
         DiscoveryEvidence(
           assetId: agent.id,
@@ -155,8 +194,9 @@ final class ProcessInspector {
   }
 
   private func firstArgumentExecutablePath(for row: ProcessObservation) -> String? {
-    guard let firstArgument = row.arguments.split(whereSeparator: { $0 == " " || $0 == "\t" })
-      .first
+    guard
+      let firstArgument = row.arguments.split(whereSeparator: { $0 == " " || $0 == "\t" })
+        .first
     else {
       return nil
     }
@@ -173,13 +213,64 @@ final class ProcessInspector {
   private func processBelongsToInstallPath(
     _ row: ProcessObservation, fingerprint: AgentFingerprint
   ) -> Bool {
-    let text = "\(row.command) \(row.arguments)"
+    let text = "\(row.command) \(row.arguments) \(row.bundlePath ?? "")"
     return fingerprint.installPaths
       .map { DiscoveryUtilities.expandedPath($0, home: config.homeDirectory).path }
       .filter { $0.hasSuffix(".app") }
       .contains { installPath in
         text == installPath || text.contains("\(installPath)/")
       }
+  }
+
+  private func runtimeProcessRows(timeout: TimeInterval) -> [ProcessObservation] {
+    let shellRows = processRows(timeout: timeout)
+    let appRows = runningApplicationRows()
+    var keyed: [Int32: ProcessObservation] = [:]
+    for row in shellRows {
+      keyed[row.pid] = row
+    }
+    for appRow in appRows {
+      if var existing = keyed[appRow.pid] {
+        existing.command = appRow.command
+        existing.arguments = "\(existing.arguments) \(appRow.arguments)"
+        existing.bundleIdentifier = appRow.bundleIdentifier
+        existing.bundlePath = appRow.bundlePath
+        existing.localizedName = appRow.localizedName
+        keyed[appRow.pid] = existing
+      } else {
+        keyed[appRow.pid] = appRow
+      }
+    }
+    return keyed.values.sorted { $0.pid < $1.pid }
+  }
+
+  private func runningApplicationRows() -> [ProcessObservation] {
+    guard !usesIsolatedHomeDirectory else { return [] }
+    return NSWorkspace.shared.runningApplications.compactMap { app -> ProcessObservation? in
+      guard app.processIdentifier > 0 else { return nil }
+      let executablePath = app.executableURL?.path ?? app.bundleURL?.path ?? app.localizedName ?? ""
+      guard !executablePath.isEmpty else { return nil }
+      let evidence = [
+        app.executableURL?.path,
+        app.bundleURL?.path,
+        app.bundleIdentifier,
+        app.localizedName,
+      ].compactMap { $0 }.joined(separator: " ")
+      return ProcessObservation(
+        pid: app.processIdentifier,
+        ppid: 0,
+        command: executablePath,
+        arguments: evidence,
+        bundleIdentifier: app.bundleIdentifier,
+        bundlePath: app.bundleURL?.path,
+        localizedName: app.localizedName
+      )
+    }
+  }
+
+  private var usesIsolatedHomeDirectory: Bool {
+    config.homeDirectory.standardizedFileURL.path
+      != FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
   }
 
   private func processRows(timeout: TimeInterval) -> [ProcessObservation] {
@@ -227,8 +318,9 @@ final class ProcessInspector {
   }
 
   private func commandScore(in text: String) -> Int {
-    [" bash ", " python ", " node ", " git ", " npm ", " curl "].filter {
-      text.lowercased().contains($0)
+    let lower = " \(text.lowercased()) "
+    return ["bash", "python", "node", "git", "npm", "curl"].filter {
+      lower.contains(" \($0) ") || lower.contains("/\($0) ")
     }.count
   }
 
@@ -241,6 +333,21 @@ final class ProcessInspector {
       DiscoveryUtilities.fileExists(workspace.appendingPathComponent($0))
     }
   }
+
+  private func parentChain(for row: ProcessObservation, rowsByPID: [Int32: ProcessObservation])
+    -> [String]
+  {
+    var chain: [String] = []
+    var currentParent = row.ppid
+    var seen: Set<Int32> = [row.pid]
+    while currentParent > 0, !seen.contains(currentParent), chain.count < 8 {
+      seen.insert(currentParent)
+      guard let parent = rowsByPID[currentParent] else { break }
+      chain.append(URL(fileURLWithPath: parent.command).lastPathComponent)
+      currentParent = parent.ppid
+    }
+    return chain
+  }
 }
 
 struct ProcessObservation: Hashable {
@@ -248,12 +355,26 @@ struct ProcessObservation: Hashable {
   var ppid: Int32
   var command: String
   var arguments: String
+  var bundleIdentifier: String?
+  var bundlePath: String?
+  var localizedName: String?
 
-  init(pid: Int32, ppid: Int32, command: String, arguments: String) {
+  init(
+    pid: Int32,
+    ppid: Int32,
+    command: String,
+    arguments: String,
+    bundleIdentifier: String? = nil,
+    bundlePath: String? = nil,
+    localizedName: String? = nil
+  ) {
     self.pid = pid
     self.ppid = ppid
     self.command = command
     self.arguments = arguments
+    self.bundleIdentifier = bundleIdentifier
+    self.bundlePath = bundlePath
+    self.localizedName = localizedName
   }
 
   init?(line: String) {
@@ -267,5 +388,8 @@ struct ProcessObservation: Hashable {
     ppid = ppidInt
     command = String(parts[2])
     arguments = parts.count >= 4 ? String(parts[3]) : command
+    bundleIdentifier = nil
+    bundlePath = nil
+    localizedName = nil
   }
 }

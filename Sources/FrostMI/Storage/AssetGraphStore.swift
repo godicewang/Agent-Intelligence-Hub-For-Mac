@@ -79,6 +79,7 @@ final class AssetGraphStore: @unchecked Sendable {
         $0.capability.rawValue
       }
       snapshot.events = mergeByKey(snapshot.events + result.events) { $0.id.uuidString }
+      snapshot.events = trimmedObservationEvents(snapshot.events)
       if result.hasColdStartCompletionEvent {
         snapshot.lastScannedAt = result.scannedAt
       } else {
@@ -92,6 +93,51 @@ final class AssetGraphStore: @unchecked Sendable {
       if replacesColdStartSnapshot {
         try database.deleteAll()
       }
+      try persist(snapshot)
+      return snapshot
+    }
+  }
+
+  @discardableResult
+  func replaceRuntimeObservation(_ result: DiscoveryScanResult) throws -> DiscoverySnapshot {
+    try lock.withLock {
+      var snapshot = try loadSnapshotUnlocked()
+      let activeProcessIds = Set(result.runtimeProcesses.map(\.pid))
+
+      for index in snapshot.agents.indices
+      where !snapshot.agents[index].processIds.isEmpty
+        && snapshot.agents[index].runtimeStatus == .running
+        && Set(snapshot.agents[index].processIds).isDisjoint(with: activeProcessIds)
+      {
+        snapshot.agents[index].runtimeStatus = .recentlySeen
+      }
+
+      for incoming in result.agents {
+        if let index = snapshot.agents.firstIndex(where: { $0.mergeKeyMatches(incoming) }) {
+          snapshot.agents[index].merge(with: incoming)
+        } else {
+          snapshot.agents.append(incoming)
+        }
+      }
+
+      snapshot.runtimeProcesses = mergeByKey(result.runtimeProcesses) { String($0.pid) }
+      for evidence in result.evidence {
+        if !snapshot.evidence.contains(where: { $0.id == evidence.id }) {
+          snapshot.evidence.append(evidence)
+        }
+      }
+      snapshot.permissionStates = mergeByKey(snapshot.permissionStates + result.permissionStates) {
+        $0.capability.rawValue
+      }
+      snapshot.events = mergeByKey(snapshot.events + result.events) { $0.id.uuidString }
+      snapshot.events = trimmedObservationEvents(snapshot.events)
+      snapshot.lastScannedAt = latestScanTime(
+        agents: snapshot.agents, mcpServers: snapshot.mcpServers, skills: snapshot.skills,
+        contextFiles: snapshot.contextFiles, memories: snapshot.memories,
+        runtimeProcesses: snapshot.runtimeProcesses, evidence: snapshot.evidence,
+        events: snapshot.events)
+
+      try database.delete(kind: .runtimeProcess)
       try persist(snapshot)
       return snapshot
     }
@@ -152,6 +198,25 @@ final class AssetGraphStore: @unchecked Sendable {
       keyed[key(value)] = value
     }
     return keyed.values.sorted { key($0) < key($1) }
+  }
+
+  private func trimmedObservationEvents(_ events: [DiscoveryEvent]) -> [DiscoveryEvent] {
+    let processEvents = events.filter { $0.kind == .processObservation }
+      .sorted { $0.createdAt > $1.createdAt }
+    let fileSystemEvents = events.filter { $0.kind == .fileSystemChange }
+      .sorted { $0.createdAt > $1.createdAt }
+    let keptProcessEventIds = Set(processEvents.prefix(20).map(\.id))
+    let keptFileSystemEventIds = Set(fileSystemEvents.prefix(120).map(\.id))
+    return events.filter {
+      switch $0.kind {
+      case .processObservation:
+        keptProcessEventIds.contains($0.id)
+      case .fileSystemChange:
+        keptFileSystemEventIds.contains($0.id)
+      default:
+        true
+      }
+    }
   }
 
   private func append<T: Encodable>(_ values: [T], kind: String, to lines: inout [String]) throws {

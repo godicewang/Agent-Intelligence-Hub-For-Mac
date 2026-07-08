@@ -8,10 +8,45 @@ private enum AgentScanSection: Hashable {
   case context
   case memory
   case permissions
+  case runtimeProcesses
+  case runtimeEvents
+  case runtimeSensors
+  case analysisAgents
+}
+
+private enum AgentSensingTab: String, CaseIterable, Identifiable {
+  case staticScan
+  case runtimeMonitor
+  case agentAnalysis
+
+  var id: String { rawValue }
+
+  var title: String {
+    switch self {
+    case .staticScan:
+      "Static Scan"
+    case .runtimeMonitor:
+      "Runtime Monitor"
+    case .agentAnalysis:
+      "Agent Analysis"
+    }
+  }
+
+  var subtitle: String {
+    switch self {
+    case .staticScan:
+      "静态发现 Agent、MCP、Skill、Context 和 Memory。"
+    case .runtimeMonitor:
+      "运行时进程、FSEvents、权限和传感器状态。"
+    case .agentAnalysis:
+      "按 Agent 聚合静态资产与动态运行证据。"
+    }
+  }
 }
 
 struct AgentScanView: View {
   @StateObject private var viewModel = AgentScanViewModel()
+  @State private var selectedTab: AgentSensingTab = .staticScan
   @State private var selectedAgentID: UUID?
   @State private var showsLowConfidenceCommonAgents = false
   @State private var commonAgentPage = 0
@@ -21,6 +56,9 @@ struct AgentScanView: View {
   @State private var contextPage = 0
   @State private var memoryPage = 0
   @State private var permissionPage = 0
+  @State private var runtimeProcessPage = 0
+  @State private var runtimeEventPage = 0
+  @State private var analysisPage = 0
 
   private let pageSize = 10
 
@@ -34,12 +72,35 @@ struct AgentScanView: View {
         )
 
         header
-        summaryGrid(scrollProxy)
-        content
+        tabSelector
+
+        switch selectedTab {
+        case .staticScan:
+          staticSummaryGrid(scrollProxy)
+          staticContent
+        case .runtimeMonitor:
+          runtimeSummaryGrid(scrollProxy)
+          runtimeContent
+        case .agentAnalysis:
+          analysisSummaryGrid(scrollProxy)
+          analysisContent
+        }
       }
     }
     .task {
       viewModel.startIfNeeded()
+    }
+  }
+
+  private var tabSelector: some View {
+    FrostCard("Sensing Mode", subtitle: selectedTab.subtitle) {
+      Picker("Sensing Mode", selection: $selectedTab) {
+        ForEach(AgentSensingTab.allCases) { tab in
+          Text(tab.title).tag(tab)
+        }
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
     }
   }
 
@@ -127,7 +188,7 @@ struct AgentScanView: View {
     viewModel.snapshot.lastColdStartScannedAt == nil ? "等待构建本机Agent画像" : "本机Agent画像已加载"
   }
 
-  private func summaryGrid(_ scrollProxy: ScrollViewProxy) -> some View {
+  private func staticSummaryGrid(_ scrollProxy: ScrollViewProxy) -> some View {
     LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 14) {
       metric(
         "Agents",
@@ -247,7 +308,7 @@ struct AgentScanView: View {
   }
 
   @ViewBuilder
-  private var content: some View {
+  private var staticContent: some View {
     FrostDetailLayout(detailWidth: 380) {
       VStack(alignment: .leading, spacing: 18) {
         if isDiscoveryEmpty && !viewModel.isScanning {
@@ -274,6 +335,406 @@ struct AgentScanView: View {
     }
   }
 
+  private func runtimeSummaryGrid(_ scrollProxy: ScrollViewProxy) -> some View {
+    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 14) {
+      metric(
+        "Runtime",
+        value: runtimeProcesses.count,
+        icon: "dot.radiowaves.left.and.right",
+        section: .runtimeProcesses,
+        scrollProxy: scrollProxy
+      )
+      metric(
+        "Running Agents",
+        value: agentProfiles.filter(\.isRuntimeActive).count,
+        icon: "play.circle",
+        section: .analysisAgents,
+        scrollProxy: scrollProxy
+      )
+      metric(
+        "Events",
+        value: runtimeEvents.count,
+        icon: "list.bullet.rectangle",
+        section: .runtimeEvents,
+        scrollProxy: scrollProxy
+      )
+      metric(
+        "Sensors",
+        value: viewModel.snapshot.permissionStates.count,
+        icon: "antenna.radiowaves.left.and.right",
+        section: .runtimeSensors,
+        scrollProxy: scrollProxy
+      )
+    }
+  }
+
+  @ViewBuilder
+  private var runtimeContent: some View {
+    FrostDetailLayout(detailWidth: 380) {
+      VStack(alignment: .leading, spacing: 18) {
+        runtimeControlSection
+        runtimeProcessesSection
+          .id(AgentScanSection.runtimeProcesses)
+        runtimeEventsSection
+          .id(AgentScanSection.runtimeEvents)
+      }
+    } detail: {
+      VStack(alignment: .leading, spacing: 18) {
+        runtimeSensorStatusSection
+          .id(AgentScanSection.runtimeSensors)
+        runtimeAttributionSection
+      }
+    }
+  }
+
+  private var runtimeControlSection: some View {
+    FrostCard("Runtime Monitor", subtitle: "process snapshot + incremental file observation") {
+      HStack(alignment: .top, spacing: 16) {
+        ZStack {
+          RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(FrostTheme.accent.opacity(0.13))
+            .overlay(
+              RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(FrostTheme.accent.opacity(0.28), lineWidth: 1)
+            )
+
+          Image(systemName: "dot.radiowaves.left.and.right")
+            .font(.system(size: 22, weight: .semibold))
+            .foregroundStyle(FrostTheme.accent)
+        }
+        .frame(width: 48, height: 48)
+
+        VStack(alignment: .leading, spacing: 8) {
+          Text(viewModel.isRuntimeMonitoring ? "动态监控已启用" : "动态监控未启用")
+            .font(.system(size: 17, weight: .bold))
+
+          Text(runtimeStatusLine)
+            .font(.system(size: 12))
+            .foregroundStyle(FrostTheme.mutedText)
+            .fixedSize(horizontal: false, vertical: true)
+
+          WrapBadges {
+            StatusBadge(label: "No Fake Telemetry", tone: .healthy)
+            StatusBadge(label: "Process Snapshot", tone: .info)
+            StatusBadge(
+              label: viewModel.configuration.enableFSEventsWatcher ? "FSEvents On" : "FSEvents Off",
+              tone: viewModel.configuration.enableFSEventsWatcher ? .info : .neutral)
+            StatusBadge(
+              label: viewModel.configuration.enableEndpointSecurityMonitor ? "ES On" : "ES Off",
+              tone: viewModel.configuration.enableEndpointSecurityMonitor ? .warning : .neutral)
+          }
+        }
+
+        Spacer()
+
+        HStack(spacing: 10) {
+          if viewModel.isRuntimeRefreshing {
+            ProgressView()
+              .controlSize(.small)
+          }
+
+          Button {
+            viewModel.refreshRuntimeNow()
+          } label: {
+            Label("刷新运行态", systemImage: "arrow.clockwise")
+          }
+          .buttonStyle(.borderedProminent)
+          .tint(FrostTheme.accent)
+          .disabled(viewModel.isRuntimeRefreshing)
+        }
+      }
+    }
+  }
+
+  private var runtimeStatusLine: String {
+    if let refreshedAt = viewModel.lastRuntimeRefreshedAt {
+      return
+        "最近刷新：\(refreshedAt.formatted(date: .abbreviated, time: .standard))。当前使用无额外授权的进程快照和已授权工作区 FSEvents，不伪造 Endpoint Security / Network Extension 遥测。"
+    }
+    return "启动后会自动刷新运行时快照；也可以手动刷新。需要系统级遥测时只显示真实 entitlement 状态。"
+  }
+
+  private var runtimeProcessesSection: some View {
+    let visibleProcesses = pageItems(runtimeProcesses, page: runtimeProcessPage)
+
+    return FrostCard("Runtime Processes", subtitle: "known process + behavior fingerprints") {
+      if runtimeProcesses.isEmpty {
+        EmptyStateView(
+          title: "暂无运行时 Agent 进程",
+          message: "当前进程快照中没有匹配到已知 Agent 或高置信行为候选。",
+          systemImage: "play.slash", compact: true)
+      } else {
+        tableSurface {
+          tableHeader(["PID", "Owner", "Process", "Score", "Provider", "Workspace"])
+          ForEach(visibleProcesses) { process in
+            clickableRow(
+              [
+                "\(process.pid)",
+                runtimeOwnerName(for: process),
+                process.processName,
+                "\(process.agentCandidateScore)",
+                process.connectedLLMProviders.joined(separator: ", "),
+                process.workspaceTouched ?? "-",
+              ],
+              help: "打开进程可执行文件位置"
+            ) {
+              if let path = process.executablePath ?? process.bundlePath {
+                viewModel.openPath(path)
+              }
+            }
+          }
+          paginationFooter(
+            total: runtimeProcesses.count, page: $runtimeProcessPage, label: "Runtime")
+        }
+      }
+    }
+  }
+
+  private var runtimeEventsSection: some View {
+    let visibleEvents = pageItems(runtimeEvents, page: runtimeEventPage)
+
+    return FrostCard("Runtime Events", subtitle: "local observation trail") {
+      if runtimeEvents.isEmpty {
+        EmptyStateView(
+          title: "暂无运行时事件",
+          message: "尚未记录进程快照、FSEvents 或权限状态变化。",
+          systemImage: "list.bullet.rectangle", compact: true)
+      } else {
+        tableSurface {
+          tableHeader(["时间", "类型", "说明"])
+          ForEach(visibleEvents) { event in
+            row([
+              event.createdAt.formatted(date: .omitted, time: .standard),
+              event.kind.rawValue,
+              event.message,
+            ])
+          }
+          paginationFooter(total: runtimeEvents.count, page: $runtimeEventPage, label: "Event")
+        }
+      }
+    }
+  }
+
+  private var runtimeSensorStatusSection: some View {
+    FrostCard("Runtime Sensors", subtitle: "真实权限与传感器状态") {
+      VStack(alignment: .leading, spacing: 12) {
+        WrapBadges {
+          StatusBadge(
+            label: viewModel.configuration.enableRuntimeObserver ? "Runtime On" : "Runtime Off",
+            tone: viewModel.configuration.enableRuntimeObserver ? .healthy : .neutral)
+          StatusBadge(
+            label: viewModel.configuration.enableFSEventsWatcher ? "FSEvents On" : "FSEvents Off",
+            tone: viewModel.configuration.enableFSEventsWatcher ? .info : .neutral)
+          StatusBadge(
+            label: viewModel.configuration.enableEndpointSecurityMonitor ? "ES On" : "ES Off",
+            tone: viewModel.configuration.enableEndpointSecurityMonitor ? .warning : .neutral)
+          StatusBadge(
+            label: viewModel.configuration.enableNetworkMonitor ? "Network On" : "Network Off",
+            tone: viewModel.configuration.enableNetworkMonitor ? .warning : .neutral)
+        }
+
+        Divider()
+
+        if viewModel.snapshot.permissionStates.isEmpty {
+          EmptyStateView(
+            title: "暂无额外权限状态",
+            message: "当前运行时监控未请求额外系统权限；只展示真实可用的轻量观测。",
+            systemImage: "lock.shield", compact: true)
+        } else {
+          VStack(alignment: .leading, spacing: 8) {
+            ForEach(viewModel.snapshot.permissionStates) { state in
+              VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                  Text(state.capability.rawValue)
+                    .font(.system(size: 11, weight: .bold))
+                  Spacer()
+                  StatusBadge(label: state.status.rawValue, tone: tone(for: state.status))
+                }
+                Text(state.message)
+                  .font(.system(size: 10.5))
+                  .foregroundStyle(FrostTheme.mutedText)
+                  .fixedSize(horizontal: false, vertical: true)
+              }
+              .padding(10)
+              .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                  .fill(FrostTheme.tableRowBackground)
+              )
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private var runtimeAttributionSection: some View {
+    FrostCard("Runtime Attribution", subtitle: "进程到 Agent 的归因") {
+      if let agent = selectedAgent {
+        let processes = AgentSensingAnalyzer.runtimeProcesses(
+          for: agent, snapshot: viewModel.snapshot)
+        VStack(alignment: .leading, spacing: 10) {
+          detailRow("Selected Agent", agent.displayName)
+          detailRow("Runtime Processes", "\(processes.count)")
+          detailRow("Process IDs", processes.map { String($0.pid) }.joined(separator: ", "))
+          detailRow(
+            "Evidence", "\(viewModel.snapshot.evidence.filter { $0.assetId == agent.id }.count)")
+          if processes.isEmpty {
+            Divider()
+            EmptyStateView(
+              title: "未观察到运行中进程",
+              message: "该 Agent 当前只有静态证据或历史运行状态。",
+              systemImage: "pause.circle", compact: true)
+          }
+        }
+      } else {
+        EmptyStateView(
+          title: "未选择 Agent",
+          message: "在 Static Scan 或 Agent Analysis 中选择 Agent 后，可查看运行时归因。",
+          systemImage: "scope", compact: true)
+      }
+    }
+  }
+
+  private func analysisSummaryGrid(_ scrollProxy: ScrollViewProxy) -> some View {
+    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 14) {
+      metric(
+        "Agents",
+        value: agentProfiles.count,
+        icon: "scope",
+        section: .analysisAgents,
+        scrollProxy: scrollProxy
+      )
+      metric(
+        "Active",
+        value: agentProfiles.filter(\.isRuntimeActive).count,
+        icon: "play.circle",
+        section: .analysisAgents,
+        scrollProxy: scrollProxy
+      )
+      metric(
+        "Static Linked",
+        value: agentProfiles.filter { $0.staticAssetCount > 0 }.count,
+        icon: "link",
+        section: .analysisAgents,
+        scrollProxy: scrollProxy
+      )
+      metric(
+        "Review",
+        value: agentProfiles.filter { [.high, .critical].contains($0.highestRisk) }.count,
+        icon: "exclamationmark.shield",
+        section: .analysisAgents,
+        scrollProxy: scrollProxy
+      )
+    }
+  }
+
+  @ViewBuilder
+  private var analysisContent: some View {
+    FrostDetailLayout(detailWidth: 400) {
+      VStack(alignment: .leading, spacing: 18) {
+        agentAnalysisTable
+          .id(AgentScanSection.analysisAgents)
+      }
+    } detail: {
+      agentAnalysisDetail
+    }
+  }
+
+  private var agentAnalysisTable: some View {
+    let visibleProfiles = pageItems(agentProfiles, page: analysisPage)
+
+    return FrostCard("Agent-Level Analysis", subtitle: "static + runtime evidence rollup") {
+      if agentProfiles.isEmpty {
+        EmptyStateView(
+          title: "暂无 Agent 画像",
+          message: "完成静态发现或观察到运行中 Agent 后，这里会展示聚合画像。",
+          systemImage: "person.crop.rectangle.stack", compact: true)
+      } else {
+        tableSurface {
+          tableHeader(["Agent", "Coverage", "Static", "Runtime", "Evidence", "Risk"])
+          ForEach(visibleProfiles) { profile in
+            Button {
+              selectedAgentID = profile.agent.id
+            } label: {
+              VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                  rowText(profile.agent.displayName)
+                  rowText(profile.coverageLabel)
+                  rowText("\(profile.staticAssetCount)")
+                  rowText("\(profile.runtimeProcessCount)")
+                  rowText("\(profile.evidenceCount)")
+                  HStack {
+                    StatusBadge(
+                      label: profile.highestRisk.rawValue, tone: tone(for: profile.highestRisk))
+                    Spacer(minLength: 0)
+                  }
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .padding(.horizontal, 10)
+                  .padding(.vertical, 8)
+                }
+                Divider()
+              }
+              .background(
+                selectedAgentID == profile.agent.id ? FrostTheme.accent.opacity(0.09) : Color.clear
+              )
+              .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .pointingHandCursor()
+            .help("查看 Agent 画像")
+          }
+          paginationFooter(total: agentProfiles.count, page: $analysisPage, label: "Agent")
+        }
+      }
+    }
+  }
+
+  private var agentAnalysisDetail: some View {
+    FrostCard("Agent Intelligence", subtitle: "证据覆盖与运行态摘要") {
+      if let profile = selectedProfile {
+        VStack(alignment: .leading, spacing: 12) {
+          VStack(alignment: .leading, spacing: 6) {
+            Text(profile.agent.displayName)
+              .font(.system(size: 15, weight: .bold))
+              .lineLimit(2)
+            HStack(spacing: 6) {
+              StatusBadge(
+                label: profile.coverageLabel, tone: profile.isRuntimeActive ? .healthy : .neutral)
+              StatusBadge(label: profile.agent.agentType.rawValue, tone: .info)
+              StatusBadge(label: profile.highestRisk.rawValue, tone: tone(for: profile.highestRisk))
+            }
+          }
+
+          Divider()
+
+          detailRow("Confidence", "\(profile.agent.confidence)")
+          detailRow("MCP", "\(profile.mcpCount)")
+          detailRow("Skills", "\(profile.skillCount)")
+          detailRow("Context", "\(profile.contextCount)")
+          detailRow("Memory", "\(profile.memoryCount)")
+          detailRow("Runtime", "\(profile.runtimeProcessCount)")
+          detailRow("Evidence", "\(profile.evidenceCount)")
+
+          Divider()
+
+          Text(profile.analysisSummary)
+            .font(.system(size: 11))
+            .foregroundStyle(FrostTheme.mutedText)
+            .fixedSize(horizontal: false, vertical: true)
+
+          pathGroup("Config", profile.agent.configPaths)
+          pathGroup("Workspace", profile.agent.workspacePaths)
+          pathGroup("Executable", profile.agent.executablePaths)
+        }
+      } else {
+        EmptyStateView(
+          title: "未选择 Agent",
+          message: "点击左侧 Agent 画像行查看静态资产、动态进程和证据覆盖。",
+          systemImage: "sidebar.right", compact: true)
+      }
+    }
+  }
+
   private var isDiscoveryEmpty: Bool {
     viewModel.snapshot.agents.isEmpty && viewModel.snapshot.mcpServers.isEmpty
       && viewModel.snapshot.skills.isEmpty && viewModel.snapshot.contextFiles.isEmpty
@@ -287,6 +748,32 @@ struct AgentScanView: View {
       }
       return $0.confidence > $1.confidence
     }
+  }
+
+  private var runtimeProcesses: [RuntimeProcessAsset] {
+    viewModel.snapshot.runtimeProcesses.sorted {
+      if $0.agentCandidateScore == $1.agentCandidateScore {
+        return $0.processName < $1.processName
+      }
+      return $0.agentCandidateScore > $1.agentCandidateScore
+    }
+  }
+
+  private var runtimeEvents: [DiscoveryEvent] {
+    viewModel.snapshot.events
+      .filter {
+        [.processObservation, .fileSystemChange, .permissionState, .storage].contains($0.kind)
+      }
+      .sorted { $0.createdAt > $1.createdAt }
+  }
+
+  private var agentProfiles: [AgentSensingProfile] {
+    AgentSensingAnalyzer.profiles(from: viewModel.snapshot)
+  }
+
+  private var selectedProfile: AgentSensingProfile? {
+    agentProfiles.first { $0.agent.id == selectedAgentID }
+      ?? agentProfiles.first
   }
 
   private var selectedAgent: AgentAsset? {
@@ -897,6 +1384,31 @@ struct AgentScanView: View {
     case .high, .critical:
       .critical
     }
+  }
+
+  private func tone(for status: PermissionStatus) -> StatusBadgeTone {
+    switch status {
+    case .available:
+      .healthy
+    case .restricted, .missingEntitlement:
+      .warning
+    case .notConfigured:
+      .neutral
+    case .failed:
+      .critical
+    }
+  }
+
+  private func runtimeOwnerName(for process: RuntimeProcessAsset) -> String {
+    if let sourceAgentId = process.sourceAgentId,
+      let agent = viewModel.snapshot.agents.first(where: { $0.id == sourceAgentId })
+    {
+      return agent.displayName
+    }
+    if let agent = viewModel.snapshot.agents.first(where: { $0.processIds.contains(process.pid) }) {
+      return agent.displayName
+    }
+    return process.bundleIdentifier ?? process.processName
   }
 }
 

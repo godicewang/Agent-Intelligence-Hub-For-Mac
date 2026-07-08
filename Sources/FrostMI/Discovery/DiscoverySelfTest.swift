@@ -503,6 +503,9 @@ enum DiscoverySelfTest {
         $0.normalizedName == "codex-cli" && $0.runtimeStatus == .running
           && $0.processIds.contains(4242)
       }
+        && result.runtimeProcesses.contains {
+          $0.pid == 4242 && $0.processName == "codex"
+        }
     }
 
     check("Process inspector attributes Codex app child process to app", failures: &failures) {
@@ -534,6 +537,9 @@ enum DiscoverySelfTest {
       }
         && !result.agents.contains {
           $0.normalizedName == "codex-cli" && $0.processIds.contains(4243)
+        }
+        && result.runtimeProcesses.contains {
+          $0.pid == 4243 && $0.sourceAgentId != nil
         }
     }
 
@@ -716,6 +722,115 @@ enum DiscoverySelfTest {
         && reloaded.lastColdStartScannedAt == nil
     }
 
+    check("AssetGraphStore replaces stale runtime process snapshots", failures: &failures) {
+      let dbURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString)
+        .appendingPathComponent("FrostADR.sqlite")
+      let store = try AssetGraphStore(database: FrostDatabase(url: dbURL))
+      let agentId = UUID()
+      var first = DiscoveryScanResult()
+      first.agents = [
+        AgentAsset(
+          id: agentId,
+          displayName: "Runtime Fixture",
+          normalizedName: "runtime-fixture",
+          agentType: .customTerminal,
+          confidence: 70,
+          discoveryMethods: [.processFingerprint],
+          processIds: [9101],
+          runtimeStatus: .running)
+      ]
+      first.runtimeProcesses = [
+        RuntimeProcessAsset(
+          sourceAgentId: agentId,
+          pid: 9101,
+          ppid: 1,
+          processName: "runtime-fixture",
+          executablePath: "/tmp/runtime-fixture",
+          agentCandidateScore: 70)
+      ]
+      _ = try store.replaceRuntimeObservation(first)
+
+      var second = DiscoveryScanResult()
+      second.events = [
+        DiscoveryEvent(
+          id: UUID(),
+          kind: .processObservation,
+          path: nil,
+          message:
+            "Runtime process snapshot inspected 0 processes and matched 0 agent-like runtime processes.",
+          createdAt: Date())
+      ]
+      let snapshot = try store.replaceRuntimeObservation(second)
+      let reloaded = try AssetGraphStore(database: FrostDatabase(url: dbURL)).loadSnapshot()
+      return snapshot.runtimeProcesses.isEmpty
+        && reloaded.runtimeProcesses.isEmpty
+        && snapshot.agents.first?.runtimeStatus == .recentlySeen
+    }
+
+    check("Agent sensing analyzer joins static and runtime evidence", failures: &failures) {
+      let agentId = UUID()
+      let agent = AgentAsset(
+        id: agentId,
+        displayName: "Analyzer Fixture",
+        normalizedName: "analyzer-fixture",
+        agentType: .customTerminal,
+        confidence: 80,
+        discoveryMethods: [.configSchema],
+        configPaths: ["/tmp/analyzer/mcp.json"],
+        workspacePaths: ["/tmp/analyzer"],
+        processIds: [9201],
+        runtimeStatus: .running)
+      let snapshot = DiscoverySnapshot(
+        agents: [agent],
+        mcpServers: [
+          MCPServerAsset(
+            name: "fixture",
+            sourceAgentId: agentId,
+            transport: .stdio,
+            configPath: "/tmp/analyzer/mcp.json",
+            scope: .project,
+            manifestHash: "fixture")
+        ],
+        skills: [],
+        contextFiles: [
+          ContextFileAsset(
+            path: "/tmp/analyzer/AGENTS.md",
+            workspace: "/tmp/analyzer",
+            detectedAgent: "Analyzer Fixture",
+            hash: "fixture")
+        ],
+        memories: [],
+        runtimeProcesses: [
+          RuntimeProcessAsset(
+            sourceAgentId: agentId,
+            pid: 9201,
+            ppid: 1,
+            processName: "analyzer-fixture",
+            agentCandidateScore: 80)
+        ],
+        evidence: [
+          DiscoveryEvidence(
+            assetId: agentId,
+            evidenceType: .process,
+            source: "fixture",
+            processId: 9201,
+            confidenceDelta: 80,
+            summary: "fixture")
+        ],
+        permissionStates: [],
+        events: [],
+        lastScannedAt: nil)
+      guard let profile = AgentSensingAnalyzer.profiles(from: snapshot).first else {
+        return false
+      }
+      return profile.mcpCount == 1
+        && profile.contextCount == 1
+        && profile.runtimeProcessCount == 1
+        && profile.evidenceCount == 1
+        && profile.isRuntimeActive
+    }
+
     check("AssetGraphStore does not treat UI timeout as completed cold scan", failures: &failures) {
       let dbURL = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString)
@@ -821,7 +936,8 @@ enum DiscoverySelfTest {
 
     let manifestURLs = discoveryBenchManifestURLs()
     guard !manifestURLs.isEmpty else {
-      print("FrostMI Cold Start Agent Bench failed: no discovery bench expected.json manifests found.")
+      print(
+        "FrostMI Cold Start Agent Bench failed: no discovery bench expected.json manifests found.")
       return 1
     }
 
@@ -1166,7 +1282,8 @@ enum DiscoverySelfTest {
   }
 
   private static func ownerIssues(result: DiscoveryScanResult) -> [BenchAuditIssue] {
-    let agentNamesById = Dictionary(uniqueKeysWithValues: result.agents.map { ($0.id, $0.normalizedName) })
+    let agentNamesById = Dictionary(
+      uniqueKeysWithValues: result.agents.map { ($0.id, $0.normalizedName) })
     var issues: [BenchAuditIssue] = []
 
     for mcp in result.mcpServers {
@@ -1219,7 +1336,8 @@ enum DiscoverySelfTest {
             severity: .error,
             kind: .ownerMismatch,
             message:
-              "\(assetLabel) owner \(actualOwner) conflicts with path-implied \(impliedOwnerList) at \(compactBenchPath(assetPath))")
+              "\(assetLabel) owner \(actualOwner) conflicts with path-implied \(impliedOwnerList) at \(compactBenchPath(assetPath))"
+          )
         ]
       }
       return []
@@ -1232,7 +1350,8 @@ enum DiscoverySelfTest {
         severity: .warning,
         kind: .missingOwner,
         message:
-          "\(assetLabel) has no sourceAgentId; path implies \(impliedOwnerList) at \(compactBenchPath(assetPath))")
+          "\(assetLabel) has no sourceAgentId; path implies \(impliedOwnerList) at \(compactBenchPath(assetPath))"
+      )
     ]
   }
 
