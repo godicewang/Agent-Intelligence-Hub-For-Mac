@@ -65,6 +65,7 @@ final class AgentScanViewModel: ObservableObject {
     }
   }
   @Published var isScanning = false
+  @Published var isStaticProfileRebuilding = false
   @Published var isRuntimeRefreshing = false
   @Published var isRuntimeMonitoring = false
   @Published var lastRuntimeRefreshedAt: Date?
@@ -112,10 +113,17 @@ final class AgentScanViewModel: ObservableObject {
   }
 
   func rescan() {
+    rebuildStaticProfile()
+  }
+
+  func rebuildStaticProfile() {
     guard let service else { return }
+    guard !isScanning, !isStaticProfileRebuilding else { return }
+    isStaticProfileRebuilding = true
     Task {
       await service.runColdStartScan()
       bind(from: service)
+      isStaticProfileRebuilding = false
     }
   }
 
@@ -132,6 +140,24 @@ final class AgentScanViewModel: ObservableObject {
     isRuntimeRefreshing = true
     Task {
       await refreshRuntimeNowAsync(service: service)
+    }
+  }
+
+  func setRuntimeMonitoringEnabled(_ enabled: Bool) {
+    guard let service, configuration.enableRuntimeObserver else {
+      isRuntimeMonitoring = false
+      return
+    }
+
+    if enabled {
+      service.startRuntimeObservation()
+      startRuntimeRefreshLoop()
+    } else {
+      runtimeRefreshTask?.cancel()
+      runtimeRefreshTask = nil
+      service.stopRuntimeObservation()
+      isRuntimeRefreshing = false
+      isRuntimeMonitoring = false
     }
   }
 
@@ -187,6 +213,9 @@ final class AgentScanViewModel: ObservableObject {
     snapshot = service.snapshot
     isScanning = service.isScanning
     errorMessage = service.lastError
+    if !service.isScanning {
+      isStaticProfileRebuilding = false
+    }
   }
 
   private func rebuildDerivedState() {

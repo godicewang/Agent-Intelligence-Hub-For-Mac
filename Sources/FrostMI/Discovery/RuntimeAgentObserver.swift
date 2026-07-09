@@ -45,6 +45,7 @@ final class RuntimeAgentObserver: @unchecked Sendable {
   private func startFileSystemWatcher(onUpdate: @escaping @MainActor (DiscoverySnapshot) -> Void)
     -> DiscoveryPermissionState
   {
+    runtimeWatcher?.stop()
     let watcher = makeFileSystemWatcher(onUpdate: onUpdate)
     let state = watcher.start(paths: config.scanRoots)
     runtimeWatcher = watcher

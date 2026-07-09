@@ -15,38 +15,38 @@ private enum AgentScanSection: Hashable {
 }
 
 private enum AgentSensingTab: String, CaseIterable, Identifiable {
-  case staticScan
-  case runtimeMonitor
   case agentAnalysis
+  case runtimeMonitor
+  case staticScan
 
   var id: String { rawValue }
 
   var title: String {
     switch self {
-    case .staticScan:
-      "Static Scan"
-    case .runtimeMonitor:
-      "Runtime Monitor"
     case .agentAnalysis:
       "Agent Analysis"
+    case .runtimeMonitor:
+      "Runtime Monitor"
+    case .staticScan:
+      "Static Scan"
     }
   }
 
   var subtitle: String {
     switch self {
-    case .staticScan:
-      "静态发现 Agent、MCP、Skill、Context 和 Memory。"
+    case .agentAnalysis:
+      "首页先看每个 Agent 的总画像、运行状态和关联资产。"
     case .runtimeMonitor:
       "运行时进程、FSEvents、权限和传感器状态。"
-    case .agentAnalysis:
-      "按 Agent 聚合静态资产与动态运行证据。"
+    case .staticScan:
+      "静态发现 Agent、MCP、Skill、Context 和 Memory。"
     }
   }
 }
 
 struct AgentScanView: View {
   @StateObject private var viewModel = AgentScanViewModel()
-  @State private var selectedTab: AgentSensingTab = .staticScan
+  @State private var selectedTab: AgentSensingTab = .agentAnalysis
   @State private var selectedAgentID: UUID?
   @State private var showsLowConfidenceCommonAgents = false
   @State private var commonAgentPage = 0
@@ -74,16 +74,17 @@ struct AgentScanView: View {
         tabSelector
 
         switch selectedTab {
+        case .agentAnalysis:
+          agentCommandCenter
+          analysisSummaryGrid(scrollProxy)
+          analysisContent
+        case .runtimeMonitor:
+          runtimeMonitorDashboard
+          runtimeContent
         case .staticScan:
           header
           staticSummaryGrid(scrollProxy)
           staticContent
-        case .runtimeMonitor:
-          runtimeMonitorDashboard
-          runtimeContent
-        case .agentAnalysis:
-          analysisSummaryGrid(scrollProxy)
-          analysisContent
         }
       }
     }
@@ -93,7 +94,7 @@ struct AgentScanView: View {
   }
 
   private var tabSelector: some View {
-    FrostCard("Sensing Mode", subtitle: "先选你要看的层级：静态资产、实时运行，或 Agent 总画像。") {
+    FrostCard("Sensing Mode", subtitle: "从 Agent 总画像开始，再下钻到运行时或静态扫描明细。") {
       VStack(alignment: .leading, spacing: 12) {
         Picker("Sensing Mode", selection: $selectedTab) {
           ForEach(AgentSensingTab.allCases) { tab in
@@ -115,6 +116,112 @@ struct AgentScanView: View {
         }
       }
     }
+  }
+
+  private var staticProfileRebuildBinding: Binding<Bool> {
+    Binding(
+      get: { viewModel.isScanning || viewModel.isStaticProfileRebuilding },
+      set: { isOn in
+        if isOn {
+          viewModel.rebuildStaticProfile()
+        }
+      }
+    )
+  }
+
+  private var runtimeMonitoringBinding: Binding<Bool> {
+    Binding(
+      get: { viewModel.isRuntimeMonitoring },
+      set: { viewModel.setRuntimeMonitoringEnabled($0) }
+    )
+  }
+
+  private var agentCommandCenter: some View {
+    FrostCard("Agent Command Center", subtitle: "日常先看 Agent 总画像；需要刷新资产或观测运行态时，用这里的两个主开关。") {
+      LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 14)], spacing: 14) {
+        sensingSwitchCard(
+          title: "静态画像重建",
+          caption: "Static Profile Rebuild",
+          description: "重新扫描本机 Agent、MCP、Skill、Context 和 Memory，完成后更新下方 Agent 画像。",
+          systemImage: "arrow.triangle.2.circlepath",
+          status: viewModel.isScanning || viewModel.isStaticProfileRebuilding ? "构建中" : "手动刷新",
+          tone: viewModel.isScanning || viewModel.isStaticProfileRebuilding ? .warning : .info,
+          isOn: staticProfileRebuildBinding,
+          isDisabled: viewModel.isScanning || viewModel.isStaticProfileRebuilding
+        )
+
+        sensingSwitchCard(
+          title: "运行时监控",
+          caption: "Runtime Observation",
+          description: "持续刷新运行中进程和已授权工作区 FSEvents，不主动请求额外系统级权限。",
+          systemImage: "dot.radiowaves.left.and.right",
+          status: viewModel.isRuntimeMonitoring ? "实时开启" : "已暂停",
+          tone: viewModel.isRuntimeMonitoring ? .healthy : .neutral,
+          isOn: runtimeMonitoringBinding,
+          isDisabled: !viewModel.configuration.enableRuntimeObserver
+        )
+      }
+    }
+  }
+
+  private func sensingSwitchCard(
+    title: String,
+    caption: String,
+    description: String,
+    systemImage: String,
+    status: String,
+    tone: StatusBadgeTone,
+    isOn: Binding<Bool>,
+    isDisabled: Bool = false
+  ) -> some View {
+    HStack(alignment: .top, spacing: 14) {
+      ZStack {
+        RoundedRectangle(cornerRadius: 9, style: .continuous)
+          .fill(FrostTheme.accent.opacity(0.13))
+        Image(systemName: systemImage)
+          .font(.system(size: 19, weight: .semibold))
+          .foregroundStyle(FrostTheme.accent)
+      }
+      .frame(width: 46, height: 46)
+
+      VStack(alignment: .leading, spacing: 7) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+          VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+              .font(.system(size: 15, weight: .bold))
+            Text(caption)
+              .font(.system(size: 10.5, weight: .semibold))
+              .foregroundStyle(FrostTheme.mutedText)
+          }
+
+          Spacer(minLength: 8)
+
+          StatusBadge(label: status, tone: tone)
+        }
+
+        Text(description)
+          .font(.system(size: 11.5, weight: .medium))
+          .foregroundStyle(FrostTheme.mutedText)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+
+      Toggle("", isOn: isOn)
+        .toggleStyle(.switch)
+        .labelsHidden()
+        .tint(FrostTheme.accent)
+        .disabled(isDisabled)
+        .help(title)
+    }
+    .padding(15)
+    .frame(maxWidth: .infinity, minHeight: 116, alignment: .leading)
+    .background(
+      RoundedRectangle(cornerRadius: FrostTheme.radius, style: .continuous)
+        .fill(isOn.wrappedValue ? FrostTheme.accent.opacity(0.08) : FrostTheme.moduleWellBackground)
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: FrostTheme.radius, style: .continuous)
+        .stroke(isOn.wrappedValue ? FrostTheme.accent.opacity(0.38) : FrostTheme.subtleBorder)
+    )
   }
 
   private var header: some View {

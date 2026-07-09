@@ -58,6 +58,10 @@ final class AgentDiscoveryService: ObservableObject {
     if scanner.isColdStartEnabled && snapshot.lastColdStartScannedAt == nil {
       await runColdStartScan()
     }
+    startRuntimeObservation()
+  }
+
+  func startRuntimeObservation() {
     let states = runtimeObserver.start { [weak self] snapshot in
       self?.snapshot = snapshot
     }
