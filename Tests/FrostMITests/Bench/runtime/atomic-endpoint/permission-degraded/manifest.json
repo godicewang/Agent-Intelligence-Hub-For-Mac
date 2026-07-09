@@ -1,0 +1,101 @@
+{
+  "id": "runtime-atomic-endpoint-permission-degraded",
+  "baseline": "Atomic Red Team + osquery/Sigma-style endpoint telemetry",
+  "reference": "https://osquery.readthedocs.io/en/stable/deployment/process-auditing/",
+  "license": "FrostMI-authored fixture inspired by endpoint telemetry evaluation patterns; no copied rule content.",
+  "focus": "Runtime visibility when FSEvents is available but Endpoint Security and Network Extension are missing entitlements.",
+  "input": {
+    "events": "events.jsonl"
+  },
+  "expected": {
+    "agents": [
+      {
+        "normalizedName": "gemini-cli",
+        "minConfidence": 90,
+        "runtimeStatus": "running"
+      }
+    ],
+    "absentAgents": [
+      "runtime-gemini-8101"
+    ],
+    "allowExtraAgents": false,
+    "runtimeProcessesMinCount": 1,
+    "evidenceMinCount": 4,
+    "exactCounts": {
+      "agents": 1,
+      "runtimeProcesses": 1,
+      "evidence": 4,
+      "contextFiles": 1,
+      "memoryAssets": 1,
+      "permissionStates": 3
+    },
+    "runtimeProcesses": [
+      {
+        "agent": "gemini-cli",
+        "processName": "gemini",
+        "minScore": 90,
+        "providers": [
+          "Gemini"
+        ],
+        "workspaceSuffix": "project"
+      }
+    ],
+    "contextFiles": [
+      "project/GEMINI.md"
+    ],
+    "memoryAssets": [
+      "project/.gemini/history.jsonl"
+    ],
+    "permissionStates": [
+      {
+        "capability": "fileSystemEvents",
+        "status": "available"
+      },
+      {
+        "capability": "endpointSecurity",
+        "status": "missingEntitlement"
+      },
+      {
+        "capability": "networkExtension",
+        "status": "missingEntitlement"
+      }
+    ],
+    "requiredEventKinds": [
+      "processObservation",
+      "fileSystemChange",
+      "permissionState"
+    ],
+    "requiredEvidence": [
+      {
+        "agent": "gemini-cli",
+        "type": "process",
+        "source": "gemini-cli",
+        "processId": 8101,
+        "summaryContains": "Known process fingerprint matched"
+      },
+      {
+        "agent": "gemini-cli",
+        "type": "memoryFile",
+        "processId": 8101,
+        "pathSuffix": "project/.gemini/history.jsonl"
+      },
+      {
+        "agent": "gemini-cli",
+        "type": "behavior",
+        "processId": 8101,
+        "summaryContains": "Network destination observed"
+      }
+    ],
+    "requireLinkedEvidence": true,
+    "knownGaps": [
+      {
+        "capability": "degraded_mode_explanation",
+        "reason": "The bench records missing entitlements but the product still needs clearer user-facing degraded-mode explanations."
+      },
+      {
+        "capability": "real_network_flow_capture",
+        "reason": "Network destination evidence is fixture-level until Network Extension capture is implemented."
+      }
+    ]
+  }
+}

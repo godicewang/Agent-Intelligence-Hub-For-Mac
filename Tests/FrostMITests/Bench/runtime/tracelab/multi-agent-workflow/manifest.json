@@ -1,0 +1,109 @@
+{
+  "id": "runtime-tracelab-multi-agent-workflow",
+  "baseline": "TraceLab",
+  "reference": "https://tracelab.cs.washington.edu/",
+  "license": "TraceLab code Apache-2.0; public dataset CC BY 4.0. This fixture is FrostMI-authored and does not include raw TraceLab records.",
+  "focus": "Multi-agent coding workflow with separate Codex and Claude sessions, workspace context, memory writes, tool calls, and model endpoint evidence.",
+  "input": {
+    "events": "events.jsonl"
+  },
+  "expected": {
+    "agents": [
+      {
+        "normalizedName": "codex-cli",
+        "minConfidence": 90,
+        "runtimeStatus": "running"
+      },
+      {
+        "normalizedName": "claude-code",
+        "minConfidence": 90,
+        "runtimeStatus": "running"
+      }
+    ],
+    "absentAgents": [
+      "claude-desktop",
+      "runtime-codex-7101",
+      "runtime-claude-7102"
+    ],
+    "allowExtraAgents": false,
+    "runtimeProcessesMinCount": 2,
+    "evidenceMinCount": 12,
+    "exactCounts": {
+      "agents": 2,
+      "runtimeProcesses": 2,
+      "evidence": 13,
+      "contextFiles": 2,
+      "memoryAssets": 2,
+      "permissionStates": 0
+    },
+    "runtimeProcesses": [
+      {
+        "agent": "codex-cli",
+        "processName": "codex",
+        "minScore": 90,
+        "providers": [
+          "OpenAI"
+        ],
+        "workspaceSuffix": "project"
+      },
+      {
+        "agent": "claude-code",
+        "processName": "claude",
+        "minScore": 90,
+        "providers": [
+          "Anthropic"
+        ],
+        "workspaceSuffix": "project"
+      }
+    ],
+    "contextFiles": [
+      "project/AGENTS.md",
+      "project/CLAUDE.md"
+    ],
+    "memoryAssets": [
+      "project/.codex/session-a.jsonl",
+      "project/.claude/projects/session-b.jsonl"
+    ],
+    "requiredEventKinds": [
+      "processObservation",
+      "fileSystemChange"
+    ],
+    "requiredEvidence": [
+      {
+        "agent": "codex-cli",
+        "type": "behavior",
+        "processId": 7101,
+        "summaryContains": "LLM request observed"
+      },
+      {
+        "agent": "claude-code",
+        "type": "behavior",
+        "processId": 7102,
+        "summaryContains": "Tool call observed"
+      },
+      {
+        "agent": "codex-cli",
+        "type": "memoryFile",
+        "processId": 7101,
+        "pathSuffix": "project/.codex/session-a.jsonl"
+      },
+      {
+        "agent": "claude-code",
+        "type": "memoryFile",
+        "processId": 7102,
+        "pathSuffix": "project/.claude/projects/session-b.jsonl"
+      }
+    ],
+    "requireLinkedEvidence": true,
+    "knownGaps": [
+      {
+        "capability": "cross_agent_session_correlation",
+        "reason": "FrostMI can attribute both sessions separately but does not yet build a shared multi-agent workflow graph."
+      },
+      {
+        "capability": "turn_order_reconstruction",
+        "reason": "The bench validates observable runtime events but not ordered UserPrompt -> LLM -> Tool -> Result graph edges."
+      }
+    ]
+  }
+}

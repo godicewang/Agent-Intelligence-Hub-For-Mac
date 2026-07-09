@@ -2,6 +2,9 @@ import Foundation
 
 enum RuntimeSensingBench {
   static func run() -> Int32 {
+    let failOnOpenGaps =
+      CommandLine.arguments.contains("--target")
+      || CommandLine.arguments.contains("--fail-on-gaps")
     let manifestURLs = runtimeManifestURLs()
     guard !manifestURLs.isEmpty else {
       print("FrostMI Runtime Sensing Bench failed: no runtime manifest.json files found.")
@@ -26,30 +29,47 @@ enum RuntimeSensingBench {
             contextFiles: 0,
             memoryAssets: 0,
             permissionStates: 0,
+            inputEvents: 0,
+            sessions: 0,
+            eventKinds: 0,
             knownGaps: 0,
+            gapDetails: [],
             failures: [error.localizedDescription]))
       }
     }
 
     let passed = rows.filter(\.passed).count
     let failed = rows.count - passed
+    let openGapCount = rows.map(\.knownGaps).reduce(0, +)
+    let targetFailed = failOnOpenGaps && openGapCount > 0
     print("FrostMI Runtime Sensing Bench")
     print("dataset=Tests/FrostMITests/Bench/runtime")
+    print("mode=\(failOnOpenGaps ? "target" : "regression")")
     print(
       "fixtures=\(rows.count) passed=\(passed) failed=\(failed) elapsed=\(formatSeconds(Date().timeIntervalSince(startedAt)))s"
     )
     print(
-      "totals agents=\(rows.map(\.agents).reduce(0, +)) runtimeProcesses=\(rows.map(\.runtimeProcesses).reduce(0, +)) evidence=\(rows.map(\.evidence).reduce(0, +)) context=\(rows.map(\.contextFiles).reduce(0, +)) memory=\(rows.map(\.memoryAssets).reduce(0, +)) permissionStates=\(rows.map(\.permissionStates).reduce(0, +)) knownGaps=\(rows.map(\.knownGaps).reduce(0, +))"
+      "totals inputEvents=\(rows.map(\.inputEvents).reduce(0, +)) sessions=\(rows.map(\.sessions).reduce(0, +)) agents=\(rows.map(\.agents).reduce(0, +)) runtimeProcesses=\(rows.map(\.runtimeProcesses).reduce(0, +)) evidence=\(rows.map(\.evidence).reduce(0, +)) context=\(rows.map(\.contextFiles).reduce(0, +)) memory=\(rows.map(\.memoryAssets).reduce(0, +)) permissionStates=\(rows.map(\.permissionStates).reduce(0, +)) openCapabilityGaps=\(rows.map(\.knownGaps).reduce(0, +))"
     )
     for row in rows {
       print(
-        "- \(row.id) \(row.passed ? "PASS" : "FAIL") baseline=\(row.baseline) agents=\(row.agents) runtimeProcesses=\(row.runtimeProcesses) evidence=\(row.evidence) context=\(row.contextFiles) memory=\(row.memoryAssets) permissionStates=\(row.permissionStates) knownGaps=\(row.knownGaps) elapsed=\(formatSeconds(row.elapsedSeconds))s"
+        "- \(row.id) \(row.passed ? "PASS" : "FAIL") baseline=\(row.baseline) inputEvents=\(row.inputEvents) sessions=\(row.sessions) eventKinds=\(row.eventKinds) agents=\(row.agents) runtimeProcesses=\(row.runtimeProcesses) evidence=\(row.evidence) context=\(row.contextFiles) memory=\(row.memoryAssets) permissionStates=\(row.permissionStates) openCapabilityGaps=\(row.knownGaps) elapsed=\(formatSeconds(row.elapsedSeconds))s"
       )
       for failure in row.failures {
         print("  ! \(failure)")
       }
+      for gap in row.gapDetails.prefix(4) {
+        print("  ~ [gap] \(gap.capability): \(gap.reason)")
+      }
+      if row.gapDetails.count > 4 {
+        print("  ~ ... \(row.gapDetails.count - 4) more open gaps")
+      }
     }
-    return failed == 0 ? 0 : 1
+    if targetFailed {
+      print(
+        "targetStatus=NEEDS_WORK openCapabilityGaps=\(openGapCount) regressionFailures=\(failed)")
+    }
+    return failed == 0 && !targetFailed ? 0 : 1
   }
 
   private static func runFixture(manifestURL: URL) throws -> RuntimeBenchRow {
@@ -76,7 +96,11 @@ enum RuntimeSensingBench {
       contextFiles: snapshot.contextFiles.count,
       memoryAssets: snapshot.memories.count,
       permissionStates: snapshot.permissionStates.count,
+      inputEvents: events.count,
+      sessions: Set(events.compactMap(\.sessionId)).count,
+      eventKinds: Set(events.map(\.kind)).count,
       knownGaps: manifest.expected.knownGaps.count,
+      gapDetails: manifest.expected.knownGaps,
       failures: failures)
   }
 
@@ -508,6 +532,7 @@ enum RuntimeSensingBench {
   private static func isMemoryPath(_ path: String) -> Bool {
     let lower = path.lowercased()
     return lower.contains("memory") || lower.contains("session") || lower.contains("conversation")
+      || lower.contains("history")
   }
 
   private static func formatSeconds(_ value: TimeInterval) -> String {
@@ -539,7 +564,11 @@ private struct RuntimeBenchRow {
   var contextFiles: Int
   var memoryAssets: Int
   var permissionStates: Int
+  var inputEvents: Int
+  var sessions: Int
+  var eventKinds: Int
   var knownGaps: Int
+  var gapDetails: [ExpectedRuntimeGap]
   var failures: [String]
 }
 
@@ -744,7 +773,7 @@ private struct RuntimeBenchEvent: Decodable {
   }
 }
 
-private enum RuntimeBenchEventKind: String, Decodable {
+private enum RuntimeBenchEventKind: String, Decodable, Hashable {
   case process
   case llmRequest
   case toolCall

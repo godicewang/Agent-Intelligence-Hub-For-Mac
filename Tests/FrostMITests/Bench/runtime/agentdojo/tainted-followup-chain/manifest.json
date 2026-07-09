@@ -1,0 +1,87 @@
+{
+  "id": "runtime-agentdojo-tainted-followup-chain",
+  "baseline": "AgentDojo",
+  "reference": "https://github.com/ethz-spylab/agentdojo",
+  "license": "AgentDojo MIT. This fixture is FrostMI-authored and contains no copied AgentDojo task data.",
+  "focus": "Untrusted tool result followed by another LLM turn and risky outbound action, exposing the need for taint propagation and policy actions.",
+  "input": {
+    "events": "events.jsonl"
+  },
+  "expected": {
+    "agents": [
+      {
+        "normalizedName": "claude-code",
+        "minConfidence": 90,
+        "runtimeStatus": "running"
+      }
+    ],
+    "absentAgents": [
+      "claude-desktop",
+      "runtime-claude-7201"
+    ],
+    "allowExtraAgents": false,
+    "runtimeProcessesMinCount": 1,
+    "evidenceMinCount": 8,
+    "exactCounts": {
+      "agents": 1,
+      "runtimeProcesses": 1,
+      "evidence": 9,
+      "contextFiles": 1,
+      "memoryAssets": 0,
+      "permissionStates": 0
+    },
+    "runtimeProcesses": [
+      {
+        "agent": "claude-code",
+        "processName": "claude",
+        "minScore": 90,
+        "providers": [
+          "Anthropic"
+        ],
+        "workspaceSuffix": "project"
+      }
+    ],
+    "contextFiles": [
+      "project/CLAUDE.md"
+    ],
+    "requiredEventKinds": [
+      "processObservation",
+      "fileSystemChange"
+    ],
+    "requiredEvidence": [
+      {
+        "agent": "claude-code",
+        "type": "keyword",
+        "processId": 7201,
+        "summaryContains": "Untrusted tool result observed"
+      },
+      {
+        "agent": "claude-code",
+        "type": "behavior",
+        "processId": 7201,
+        "summaryContains": "Tool call observed: shell"
+      },
+      {
+        "agent": "claude-code",
+        "type": "behavior",
+        "processId": 7201,
+        "summaryContains": "Network destination observed"
+      }
+    ],
+    "requireLinkedEvidence": true,
+    "knownGaps": [
+      {
+        "capability": "taint_propagation",
+        "reason": "The current runtime layer records the untrusted result and follow-up action but does not link them into a tainted chain."
+      },
+      {
+        "capability": "tool_call_policy_verdict",
+        "reason": "The current bench cannot yet assert allow/block/confirm decisions for risky follow-up tool calls."
+      },
+      {
+        "capability": "attack_goal_separation",
+        "reason": "The current schema records evidence but does not distinguish user goal from attacker goal as AgentDojo does."
+      }
+    ]
+  }
+}

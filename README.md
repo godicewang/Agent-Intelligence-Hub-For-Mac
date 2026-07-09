@@ -147,7 +147,15 @@ For focused dynamic runtime sensing validation:
 Scripts/run_runtime_sensing_bench.sh
 ```
 
-The runtime bench currently uses three FrostMI-authored fixture families: TraceLab-style coding-agent loops, AgentDojo-style untrusted tool-result flows, and Atomic Red Team/osquery/Sigma-style endpoint telemetry. It validates exact fixture counts, process attribution, runtime Agent confidence, provider and workspace linkage, linked evidence, LLM/tool evidence, workspace file events, memory/session traces, network destination evidence, permission state normalization, duplicate control, and unexpected-Agent control. Large external datasets are kept under git-ignored `datasets/`.
+The runtime bench currently uses six FrostMI-authored fixture scenarios across three families: TraceLab-style coding-agent loops, AgentDojo-style untrusted tool-result flows, and Atomic Red Team/osquery/Sigma-style endpoint telemetry. It validates input event volume, session breadth, exact fixture counts, process attribution, runtime Agent confidence, provider and workspace linkage, linked evidence, LLM/tool evidence, workspace file events, memory/session/history traces, network destination evidence, permission state normalization, duplicate control, and unexpected-Agent control. It also prints `openCapabilityGaps`, so a green regression run can still point to missing product capabilities.
+
+For target-mode evaluation that fails until known runtime gaps are implemented:
+
+```bash
+Scripts/run_runtime_sensing_bench.sh --target
+```
+
+Large external datasets are kept under git-ignored `datasets/`.
 
 To fetch the fixed TraceLab v0.0.1 JSONL dataset for future replay work:
 

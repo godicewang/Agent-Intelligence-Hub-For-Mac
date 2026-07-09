@@ -54,6 +54,7 @@ The static bench has strong signal for cold-start inventory quality because it c
 
 The dynamic runtime bench is intentionally smaller, but stricter per fixture. It validates:
 
+- input event volume, session count, and event-kind breadth,
 - exact asset counts for the runtime fixture,
 - no unexpected Agent candidates unless explicitly allowed,
 - no duplicate Agents, runtime PIDs, Context paths, or Memory paths,
@@ -61,9 +62,10 @@ The dynamic runtime bench is intentionally smaller, but stricter per fixture. It
 - minimum runtime confidence score,
 - observed LLM provider and workspace attribution,
 - required evidence type, source, process id, path suffix, and summary content,
-- evidence and runtime process links back to an Agent.
+- evidence and runtime process links back to an Agent,
+- open capability gaps that should guide the next implementation cycle.
 
-This means the runtime bench now checks both coverage and precision: "did FrostMI see the runtime behavior" and "did it attribute that behavior to the right Agent without inventing extra assets."
+This means the runtime bench now checks both coverage and precision: "did FrostMI see the runtime behavior" and "did it attribute that behavior to the right Agent without inventing extra assets." A passing runtime fixture does not mean the runtime module is complete; `openCapabilityGaps` intentionally lists unimplemented target capabilities such as taint propagation, session graph reconstruction, policy verdicts, real Network Extension flow capture, and degraded-mode explanation.
 
 ## Runtime Sensing Commands
 
@@ -73,10 +75,21 @@ Use the runtime bench when changing process attribution, runtime observation, fi
 Scripts/run_runtime_sensing_bench.sh
 ```
 
+Use target mode when you want the bench to fail until known runtime gaps are implemented:
+
+```bash
+Scripts/run_runtime_sensing_bench.sh --target
+```
+
+Regression mode fails only on current-contract regressions. Target mode also fails when `openCapabilityGaps` is non-zero, making it useful for planning the next runtime implementation cycle.
+
 Current dynamic baselines:
 
 - `runtime/tracelab/codex-tool-loop/`: validates real coding-agent loop shape inspired by TraceLab: process identity, provider evidence, LLM request, tool call, workspace context, and session memory.
+- `runtime/tracelab/multi-agent-workflow/`: validates two concurrent Agent surfaces, separate sessions, workspace context, memory writes, and cross-agent attribution limits.
 - `runtime/agentdojo/untrusted-tool-result/`: validates AgentDojo-style dynamic safety signals: tool call, untrusted tool result, indirect prompt-injection evidence, and risky external destination evidence.
+- `runtime/agentdojo/tainted-followup-chain/`: validates an untrusted tool result followed by another LLM turn and risky tool/network action, exposing taint-propagation and policy-verdict gaps.
 - `runtime/atomic-endpoint/process-file-network/`: validates endpoint telemetry shape inspired by Atomic Red Team, osquery, and Sigma: process identity, workspace file changes, outbound model endpoint evidence, and permission state.
+- `runtime/atomic-endpoint/permission-degraded/`: validates degraded runtime visibility when FSEvents is available but Endpoint Security and Network Extension are missing entitlements.
 
 `Scripts/run_bench_tests.sh` includes this runtime bench, so the full bench now covers both cold-start static discovery and dynamic runtime sensing.

@@ -59,7 +59,8 @@ final class ProcessInspector {
           of: #"mcpServers|tools/list|function_call|tool_choice"#,
           options: [.regularExpression, .caseInsensitive]) != nil,
         wroteSessionLikeFile: row.arguments.range(
-          of: #"jsonl|sqlite|memory|conversation"#, options: [.regularExpression, .caseInsensitive])
+          of: #"jsonl|sqlite|memory|conversation|history"#,
+          options: [.regularExpression, .caseInsensitive])
           != nil,
         observedLLMCommandLoop: isLLMCommandLoop(arguments: row.arguments)
       )
@@ -378,7 +379,7 @@ final class ProcessInspector {
         options: [.regularExpression]) != nil
     let writesRuntimeTrace =
       lower.range(
-        of: #"jsonl|sqlite|memory|conversation|tool_result|tool_call"#,
+        of: #"jsonl|sqlite|memory|conversation|history|tool_result|tool_call"#,
         options: [.regularExpression]) != nil
     return hasLLMRequest && (hasToolExecution || hasToolSchema || writesRuntimeTrace)
   }
