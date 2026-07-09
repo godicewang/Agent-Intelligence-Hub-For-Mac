@@ -155,6 +155,8 @@ For target-mode evaluation that fails until known runtime gaps are implemented:
 Scripts/run_runtime_sensing_bench.sh --target
 ```
 
+Target mode resolves gap status from event order, taint flow, policy verdicts, cross-agent sessions, permission states, and linked runtime evidence. Remaining open target gaps should correspond to capabilities that are genuinely not implemented yet, such as Endpoint Security auth events or real Network Extension flow details.
+
 Large external datasets are kept under git-ignored `datasets/`.
 
 To fetch the fixed TraceLab v0.0.1 JSONL dataset for future replay work:

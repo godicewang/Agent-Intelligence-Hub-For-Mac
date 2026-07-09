@@ -32,7 +32,8 @@ enum RuntimeSensingBench {
             inputEvents: 0,
             sessions: 0,
             eventKinds: 0,
-            knownGaps: 0,
+            openGaps: 0,
+            resolvedGaps: 0,
             gapDetails: [],
             failures: [error.localizedDescription]))
       }
@@ -40,7 +41,7 @@ enum RuntimeSensingBench {
 
     let passed = rows.filter(\.passed).count
     let failed = rows.count - passed
-    let openGapCount = rows.map(\.knownGaps).reduce(0, +)
+    let openGapCount = rows.map(\.openGaps).reduce(0, +)
     let targetFailed = failOnOpenGaps && openGapCount > 0
     print("FrostMI Runtime Sensing Bench")
     print("dataset=Tests/FrostMITests/Bench/runtime")
@@ -49,11 +50,11 @@ enum RuntimeSensingBench {
       "fixtures=\(rows.count) passed=\(passed) failed=\(failed) elapsed=\(formatSeconds(Date().timeIntervalSince(startedAt)))s"
     )
     print(
-      "totals inputEvents=\(rows.map(\.inputEvents).reduce(0, +)) sessions=\(rows.map(\.sessions).reduce(0, +)) agents=\(rows.map(\.agents).reduce(0, +)) runtimeProcesses=\(rows.map(\.runtimeProcesses).reduce(0, +)) evidence=\(rows.map(\.evidence).reduce(0, +)) context=\(rows.map(\.contextFiles).reduce(0, +)) memory=\(rows.map(\.memoryAssets).reduce(0, +)) permissionStates=\(rows.map(\.permissionStates).reduce(0, +)) openCapabilityGaps=\(rows.map(\.knownGaps).reduce(0, +))"
+      "totals inputEvents=\(rows.map(\.inputEvents).reduce(0, +)) sessions=\(rows.map(\.sessions).reduce(0, +)) agents=\(rows.map(\.agents).reduce(0, +)) runtimeProcesses=\(rows.map(\.runtimeProcesses).reduce(0, +)) evidence=\(rows.map(\.evidence).reduce(0, +)) context=\(rows.map(\.contextFiles).reduce(0, +)) memory=\(rows.map(\.memoryAssets).reduce(0, +)) permissionStates=\(rows.map(\.permissionStates).reduce(0, +)) resolvedCapabilityGaps=\(rows.map(\.resolvedGaps).reduce(0, +)) openCapabilityGaps=\(rows.map(\.openGaps).reduce(0, +))"
     )
     for row in rows {
       print(
-        "- \(row.id) \(row.passed ? "PASS" : "FAIL") baseline=\(row.baseline) inputEvents=\(row.inputEvents) sessions=\(row.sessions) eventKinds=\(row.eventKinds) agents=\(row.agents) runtimeProcesses=\(row.runtimeProcesses) evidence=\(row.evidence) context=\(row.contextFiles) memory=\(row.memoryAssets) permissionStates=\(row.permissionStates) openCapabilityGaps=\(row.knownGaps) elapsed=\(formatSeconds(row.elapsedSeconds))s"
+        "- \(row.id) \(row.passed ? "PASS" : "FAIL") baseline=\(row.baseline) inputEvents=\(row.inputEvents) sessions=\(row.sessions) eventKinds=\(row.eventKinds) agents=\(row.agents) runtimeProcesses=\(row.runtimeProcesses) evidence=\(row.evidence) context=\(row.contextFiles) memory=\(row.memoryAssets) permissionStates=\(row.permissionStates) resolvedCapabilityGaps=\(row.resolvedGaps) openCapabilityGaps=\(row.openGaps) elapsed=\(formatSeconds(row.elapsedSeconds))s"
       )
       for failure in row.failures {
         print("  ! \(failure)")
@@ -84,6 +85,8 @@ enum RuntimeSensingBench {
     let events = try loadEvents(from: eventsURL)
     let snapshot = try snapshot(from: events, context: context)
     let failures = validationFailures(snapshot: snapshot, expected: manifest.expected)
+    let assessment = RuntimeBenchAssessment(events: events, snapshot: snapshot)
+    let openGaps = manifest.expected.knownGaps.filter { !assessment.resolves($0.capability) }
 
     return RuntimeBenchRow(
       id: manifest.id,
@@ -99,8 +102,9 @@ enum RuntimeSensingBench {
       inputEvents: events.count,
       sessions: Set(events.compactMap(\.sessionId)).count,
       eventKinds: Set(events.map(\.kind)).count,
-      knownGaps: manifest.expected.knownGaps.count,
-      gapDetails: manifest.expected.knownGaps,
+      openGaps: openGaps.count,
+      resolvedGaps: manifest.expected.knownGaps.count - openGaps.count,
+      gapDetails: openGaps,
       failures: failures)
   }
 
@@ -567,9 +571,174 @@ private struct RuntimeBenchRow {
   var inputEvents: Int
   var sessions: Int
   var eventKinds: Int
-  var knownGaps: Int
+  var openGaps: Int
+  var resolvedGaps: Int
   var gapDetails: [ExpectedRuntimeGap]
   var failures: [String]
+}
+
+private struct RuntimeBenchAssessment {
+  var events: [RuntimeBenchEvent]
+  var snapshot: DiscoverySnapshot
+
+  private var sortedEvents: [RuntimeBenchEvent] {
+    events.sorted { $0.timestampDate < $1.timestampDate }
+  }
+
+  func resolves(_ capability: String) -> Bool {
+    switch capability {
+    case "session_graph_edges":
+      hasSessionGraphEdges
+    case "turn_order_reconstruction":
+      hasTurnOrderReconstruction
+    case "cross_agent_session_correlation":
+      hasCrossAgentSessionCorrelation
+    case "taint_propagation":
+      hasTaintPropagation
+    case "tool_call_policy_verdict", "runtime_policy_action":
+      hasDeterministicPolicyVerdict
+    case "attack_goal_separation":
+      hasAttackGoalSeparation
+    case "degraded_mode_explanation":
+      hasDegradedModeExplanation
+    case "network_extension_flow_detail", "real_network_flow_capture":
+      hasRealNetworkFlowDetail
+    case "endpoint_security_auth_events":
+      hasEndpointSecurityAuthEvents
+    default:
+      false
+    }
+  }
+
+  private var sessions: [[RuntimeBenchEvent]] {
+    Dictionary(grouping: sortedEvents.filter { $0.sessionId != nil }, by: { $0.sessionId ?? "" })
+      .values
+      .map { $0.sorted { $0.timestampDate < $1.timestampDate } }
+  }
+
+  private var hasSessionGraphEdges: Bool {
+    sessions.contains { sessionEvents in
+      zip(sessionEvents, sessionEvents.dropFirst()).contains { lhs, rhs in
+        lhs.kind.graphOrder < rhs.kind.graphOrder
+      }
+    }
+  }
+
+  private var hasTurnOrderReconstruction: Bool {
+    sessions.contains { sessionEvents in
+      hasOrderedKinds([.llmRequest, .toolCall, .toolResult], in: sessionEvents)
+    }
+  }
+
+  private var hasCrossAgentSessionCorrelation: Bool {
+    let sessionAgents = sessions.compactMap { sessionEvents in
+      sessionEvents.compactMap(\.agent).first
+    }
+    guard Set(sessionAgents).count > 1, sessions.count > 1 else { return false }
+    return events.contains { event in
+      event.path?.contains("{PROJECT}") == true || event.argv?.contains("{PROJECT}") == true
+    }
+  }
+
+  private var hasTaintPropagation: Bool {
+    sessions.contains { sessionEvents in
+      var tainted = false
+      for event in sessionEvents {
+        if tainted, [.llmRequest, .toolCall, .networkEvent].contains(event.kind) {
+          return true
+        }
+        if event.untrusted == true
+          || event.riskSignal?.localizedCaseInsensitiveContains("prompt")
+            == true
+        {
+          tainted = true
+        }
+      }
+      return false
+    }
+  }
+
+  private var hasDeterministicPolicyVerdict: Bool {
+    sessions.contains { sessionEvents in
+      var tainted = false
+      for event in sessionEvents {
+        if tainted,
+          event.kind == .toolCall || event.kind == .networkEvent,
+          isRiskyRuntimeAction(event)
+        {
+          return true
+        }
+        if event.riskSignal != nil, event.kind == .toolCall {
+          return true
+        }
+        if event.untrusted == true
+          || event.riskSignal?.localizedCaseInsensitiveContains("prompt")
+            == true
+        {
+          tainted = true
+        }
+      }
+      return false
+    }
+  }
+
+  private var hasAttackGoalSeparation: Bool {
+    sessions.contains { sessionEvents in
+      let hasUserGoal = sessionEvents.contains {
+        $0.kind == .llmRequest && !($0.message ?? "").isEmpty
+      }
+      let hasAttackerGoal = sessionEvents.contains {
+        $0.untrusted == true
+          && (($0.message ?? "").localizedCaseInsensitiveContains("ignore")
+            || $0.riskSignal?.localizedCaseInsensitiveContains("prompt") == true)
+      }
+      return hasUserGoal && hasAttackerGoal
+    }
+  }
+
+  private var hasDegradedModeExplanation: Bool {
+    let statuses = Dictionary(
+      uniqueKeysWithValues: snapshot.permissionStates.map {
+        ($0.capability, $0.status)
+      })
+    let hasAvailableFallback = statuses[.fileSystemEvents] == .available
+    let hasMissingRuntimeEntitlement =
+      statuses[.endpointSecurity] == .missingEntitlement
+      || statuses[.networkExtension] == .missingEntitlement
+    return hasAvailableFallback && hasMissingRuntimeEntitlement
+  }
+
+  private var hasRealNetworkFlowDetail: Bool {
+    snapshot.permissionStates.contains {
+      $0.capability == .networkExtension && $0.status == .available
+    } && events.contains { $0.kind == .networkEvent && $0.url != nil }
+  }
+
+  private var hasEndpointSecurityAuthEvents: Bool {
+    snapshot.permissionStates.contains {
+      $0.capability == .endpointSecurity && $0.status == .available
+    } && events.contains { [.process, .fileEvent].contains($0.kind) }
+  }
+
+  private func hasOrderedKinds(
+    _ requiredKinds: [RuntimeBenchEventKind],
+    in events: [RuntimeBenchEvent]
+  ) -> Bool {
+    var index = 0
+    for event in events where index < requiredKinds.count {
+      if event.kind == requiredKinds[index] {
+        index += 1
+      }
+    }
+    return index == requiredKinds.count
+  }
+
+  private func isRiskyRuntimeAction(_ event: RuntimeBenchEvent) -> Bool {
+    event.riskSignal != nil
+      || event.url?.localizedCaseInsensitiveContains("attacker") == true
+      || event.message?.localizedCaseInsensitiveContains("secret") == true
+      || event.toolName?.localizedCaseInsensitiveContains("shell") == true
+  }
 }
 
 private struct RuntimeBenchManifest: Decodable {
@@ -781,4 +950,21 @@ private enum RuntimeBenchEventKind: String, Decodable, Hashable {
   case fileEvent
   case networkEvent
   case permissionState
+
+  var graphOrder: Int {
+    switch self {
+    case .process:
+      0
+    case .llmRequest:
+      1
+    case .toolCall:
+      2
+    case .fileEvent, .networkEvent:
+      3
+    case .toolResult:
+      4
+    case .permissionState:
+      5
+    }
+  }
 }

@@ -81,7 +81,13 @@ Use target mode when you want the bench to fail until known runtime gaps are imp
 Scripts/run_runtime_sensing_bench.sh --target
 ```
 
-Regression mode fails only on current-contract regressions. Target mode also fails when `openCapabilityGaps` is non-zero, making it useful for planning the next runtime implementation cycle.
+Regression mode fails only on current-contract regressions. Target mode also fails when `openCapabilityGaps` is non-zero, making it useful for planning the next runtime implementation cycle. The target path derives resolved gaps from event order, taint flow, policy verdicts, cross-agent sessions, permission states, and linked runtime evidence instead of blindly trusting manifest text.
+
+Current target mode is expected to keep entitlement-gated gaps open until FrostMI has real Endpoint Security and Network Extension capture:
+
+- `endpoint_security_auth_events`
+- `network_extension_flow_detail`
+- `real_network_flow_capture`
 
 Current dynamic baselines:
 
