@@ -58,7 +58,8 @@ struct AgentScanView: View {
   @State private var permissionPage = 0
   @State private var runtimeProcessPage = 0
   @State private var runtimeEventPage = 0
-  @State private var analysisPage = 0
+  @State private var runningAgentPage = 0
+  @State private var inactiveAgentPage = 0
 
   private let pageSize = 10
 
@@ -118,17 +119,6 @@ struct AgentScanView: View {
     }
   }
 
-  private var staticProfileRebuildBinding: Binding<Bool> {
-    Binding(
-      get: { viewModel.isScanning || viewModel.isStaticProfileRebuilding },
-      set: { isOn in
-        if isOn {
-          viewModel.rebuildStaticProfile()
-        }
-      }
-    )
-  }
-
   private var runtimeMonitoringBinding: Binding<Bool> {
     Binding(
       get: { viewModel.isRuntimeMonitoring },
@@ -139,18 +129,19 @@ struct AgentScanView: View {
   private var agentCommandCenter: some View {
     FrostCard("Agent Command Center", subtitle: "日常先看 Agent 总画像；需要刷新资产或观测运行态时，用这里的两个主开关。") {
       LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 14)], spacing: 14) {
-        sensingSwitchCard(
+        sensingActionCard(
           title: "静态画像重建",
           caption: "Static Profile Rebuild",
           description: "重新扫描本机 Agent、MCP、Skill、Context 和 Memory，完成后更新下方 Agent 画像。",
           systemImage: "arrow.triangle.2.circlepath",
           status: viewModel.isScanning || viewModel.isStaticProfileRebuilding ? "构建中" : "手动刷新",
           tone: viewModel.isScanning || viewModel.isStaticProfileRebuilding ? .warning : .info,
-          isOn: staticProfileRebuildBinding,
-          isDisabled: viewModel.isScanning || viewModel.isStaticProfileRebuilding
+          actionTitle: viewModel.isScanning || viewModel.isStaticProfileRebuilding ? "刷新中" : "刷新",
+          isBusy: viewModel.isScanning || viewModel.isStaticProfileRebuilding,
+          action: viewModel.rebuildStaticProfile
         )
 
-        sensingSwitchCard(
+        sensingToggleCard(
           title: "运行时监控",
           caption: "Runtime Observation",
           description: "持续刷新运行中进程和已授权工作区 FSEvents，不主动请求额外系统级权限。",
@@ -164,7 +155,43 @@ struct AgentScanView: View {
     }
   }
 
-  private func sensingSwitchCard(
+  private func sensingActionCard(
+    title: String,
+    caption: String,
+    description: String,
+    systemImage: String,
+    status: String,
+    tone: StatusBadgeTone,
+    actionTitle: String,
+    isBusy: Bool,
+    action: @escaping () -> Void
+  ) -> some View {
+    HStack(alignment: .top, spacing: 14) {
+      commandIcon(systemImage, isActive: isBusy)
+
+      commandText(
+        title: title, caption: caption, description: description, status: status, tone: tone)
+
+      Button(action: action) {
+        if isBusy {
+          ProgressView()
+            .controlSize(.small)
+            .frame(width: 30, height: 30)
+        } else {
+          Image(systemName: "arrow.clockwise")
+            .font(.system(size: 15, weight: .bold))
+            .frame(width: 30, height: 30)
+        }
+      }
+      .buttonStyle(.borderedProminent)
+      .tint(FrostTheme.accent)
+      .disabled(isBusy)
+      .help(actionTitle)
+    }
+    .commandCard(isActive: isBusy)
+  }
+
+  private func sensingToggleCard(
     title: String,
     caption: String,
     description: String,
@@ -175,35 +202,10 @@ struct AgentScanView: View {
     isDisabled: Bool = false
   ) -> some View {
     HStack(alignment: .top, spacing: 14) {
-      ZStack {
-        RoundedRectangle(cornerRadius: 9, style: .continuous)
-          .fill(FrostTheme.accent.opacity(0.13))
-        Image(systemName: systemImage)
-          .font(.system(size: 19, weight: .semibold))
-          .foregroundStyle(FrostTheme.accent)
-      }
-      .frame(width: 46, height: 46)
+      commandIcon(systemImage, isActive: isOn.wrappedValue)
 
-      VStack(alignment: .leading, spacing: 7) {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-          VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-              .font(.system(size: 15, weight: .bold))
-            Text(caption)
-              .font(.system(size: 10.5, weight: .semibold))
-              .foregroundStyle(FrostTheme.mutedText)
-          }
-
-          Spacer(minLength: 8)
-
-          StatusBadge(label: status, tone: tone)
-        }
-
-        Text(description)
-          .font(.system(size: 11.5, weight: .medium))
-          .foregroundStyle(FrostTheme.mutedText)
-          .fixedSize(horizontal: false, vertical: true)
-      }
+      commandText(
+        title: title, caption: caption, description: description, status: status, tone: tone)
 
       Toggle("", isOn: isOn)
         .toggleStyle(.switch)
@@ -212,16 +214,48 @@ struct AgentScanView: View {
         .disabled(isDisabled)
         .help(title)
     }
-    .padding(15)
-    .frame(maxWidth: .infinity, minHeight: 116, alignment: .leading)
-    .background(
-      RoundedRectangle(cornerRadius: FrostTheme.radius, style: .continuous)
-        .fill(isOn.wrappedValue ? FrostTheme.accent.opacity(0.08) : FrostTheme.moduleWellBackground)
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: FrostTheme.radius, style: .continuous)
-        .stroke(isOn.wrappedValue ? FrostTheme.accent.opacity(0.38) : FrostTheme.subtleBorder)
-    )
+    .commandCard(isActive: isOn.wrappedValue)
+  }
+
+  private func commandIcon(_ systemImage: String, isActive: Bool) -> some View {
+    ZStack {
+      RoundedRectangle(cornerRadius: 9, style: .continuous)
+        .fill(FrostTheme.accent.opacity(isActive ? 0.18 : 0.13))
+      Image(systemName: systemImage)
+        .font(.system(size: 19, weight: .semibold))
+        .foregroundStyle(FrostTheme.accent)
+    }
+    .frame(width: 46, height: 46)
+  }
+
+  private func commandText(
+    title: String,
+    caption: String,
+    description: String,
+    status: String,
+    tone: StatusBadgeTone
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 7) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title)
+            .font(.system(size: 15, weight: .bold))
+          Text(caption)
+            .font(.system(size: 10.5, weight: .semibold))
+            .foregroundStyle(FrostTheme.mutedText)
+        }
+
+        Spacer(minLength: 8)
+
+        StatusBadge(label: status, tone: tone)
+      }
+
+      Text(description)
+        .font(.system(size: 11.5, weight: .medium))
+        .foregroundStyle(FrostTheme.mutedText)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   private var header: some View {
@@ -747,26 +781,61 @@ struct AgentScanView: View {
   private var analysisContent: some View {
     FrostDetailLayout(detailWidth: 400) {
       VStack(alignment: .leading, spacing: 18) {
-        agentAnalysisTable
+        runningAgentsSection
           .id(AgentScanSection.analysisAgents)
+        inactiveAgentsSection
       }
     } detail: {
       agentAnalysisDetail
     }
   }
 
-  private var agentAnalysisTable: some View {
-    let visibleProfiles = pageItems(agentProfiles, page: analysisPage)
+  private var runningAgentsSection: some View {
+    agentProfileSection(
+      title: "正在运行的 Agent",
+      subtitle: "按最近观察和使用信号排序",
+      emptyTitle: "暂无运行中的 Agent",
+      emptyMessage: "当前运行时快照中没有观察到正在运行的 Agent。",
+      profiles: runningAgentProfiles,
+      page: $runningAgentPage
+    )
+  }
 
-    return FrostCard("Agent-Level Analysis", subtitle: "static + runtime evidence rollup") {
+  private var inactiveAgentsSection: some View {
+    agentProfileSection(
+      title: "未运行的 Agent",
+      subtitle: "按最近观察和资产信号排序",
+      emptyTitle: "暂无未运行的 Agent",
+      emptyMessage: "当前所有 Agent 都处于运行或最近观察状态。",
+      profiles: inactiveAgentProfiles,
+      page: $inactiveAgentPage
+    )
+  }
+
+  private func agentProfileSection(
+    title: String,
+    subtitle: String,
+    emptyTitle: String,
+    emptyMessage: String,
+    profiles: [AgentSensingProfile],
+    page: Binding<Int>
+  ) -> some View {
+    let visibleProfiles = pageItems(profiles, page: page.wrappedValue)
+
+    return FrostCard(title, subtitle: subtitle) {
       if agentProfiles.isEmpty {
         EmptyStateView(
           title: "暂无 Agent 画像",
           message: "完成静态发现或观察到运行中 Agent 后，这里会展示聚合画像。",
           systemImage: "person.crop.rectangle.stack", compact: true)
+      } else if profiles.isEmpty {
+        EmptyStateView(
+          title: emptyTitle,
+          message: emptyMessage,
+          systemImage: "tray", compact: true)
       } else {
         VStack(alignment: .leading, spacing: 12) {
-          Text("点击任意 Agent 卡片，在右侧查看它拥有的 MCP、Skill、Context、Memory，以及当前活跃进程。")
+          Text("点击任意 Agent 卡片，在右侧查看 MCP、Skill、Context、Memory 和活跃情况。排序优先使用最近观察时间，其次参考运行进程、证据和资产信号。")
             .font(.system(size: 11.5, weight: .medium))
             .foregroundStyle(FrostTheme.mutedText)
             .fixedSize(horizontal: false, vertical: true)
@@ -777,7 +846,7 @@ struct AgentScanView: View {
             }
           }
 
-          paginationFooter(total: agentProfiles.count, page: $analysisPage, label: "Agent")
+          paginationFooter(total: profiles.count, page: page, label: "Agent")
         }
       }
     }
@@ -823,6 +892,11 @@ struct AgentScanView: View {
           miniCount("Mem", profile.memoryCount)
           miniCount("Run", profile.runtimeProcessCount)
         }
+
+        Text(profile.usageSummary)
+          .font(.system(size: 10.2, weight: .semibold))
+          .foregroundStyle(FrostTheme.accent.opacity(0.9))
+          .lineLimit(1)
 
         Text(profile.analysisSummary)
           .font(.system(size: 10.5))
@@ -986,6 +1060,14 @@ struct AgentScanView: View {
 
   private var agentProfiles: [AgentSensingProfile] {
     viewModel.agentProfiles
+  }
+
+  private var runningAgentProfiles: [AgentSensingProfile] {
+    agentProfiles.filter(\.isRuntimeActive).sorted(by: AgentSensingAnalyzer.usageSort)
+  }
+
+  private var inactiveAgentProfiles: [AgentSensingProfile] {
+    agentProfiles.filter { !$0.isRuntimeActive }.sorted(by: AgentSensingAnalyzer.usageSort)
   }
 
   private var selectedProfile: AgentSensingProfile? {
@@ -1757,6 +1839,19 @@ private struct RuntimePulseMeter: View {
 extension View {
   fileprivate func pointingHandCursor() -> some View {
     modifier(PointingHandCursorModifier())
+  }
+
+  fileprivate func commandCard(isActive: Bool) -> some View {
+    padding(15)
+      .frame(maxWidth: .infinity, minHeight: 116, alignment: .leading)
+      .background(
+        RoundedRectangle(cornerRadius: FrostTheme.radius, style: .continuous)
+          .fill(isActive ? FrostTheme.accent.opacity(0.08) : FrostTheme.moduleWellBackground)
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: FrostTheme.radius, style: .continuous)
+          .stroke(isActive ? FrostTheme.accent.opacity(0.38) : FrostTheme.subtleBorder)
+      )
   }
 }
 

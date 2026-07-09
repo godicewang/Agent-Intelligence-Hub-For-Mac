@@ -10,6 +10,8 @@ struct AgentSensingProfile: Identifiable, Hashable {
   var runtimeProcessCount: Int
   var evidenceCount: Int
   var highestRisk: RiskLevel
+  var latestActivityAt: Date
+  var activitySignalCount: Int
 
   var staticAssetCount: Int {
     mcpCount + skillCount + contextCount + memoryCount
@@ -44,6 +46,11 @@ struct AgentSensingProfile: Identifiable, Hashable {
     }
     return "该 Agent 只有基础发现证据，后续需要更多配置、进程或文件变化佐证。"
   }
+
+  var usageSummary: String {
+    let timeText = latestActivityAt.formatted(date: .abbreviated, time: .shortened)
+    return "最近观察 \(timeText) · \(activitySignalCount) 个活跃/资产信号"
+  }
 }
 
 enum AgentSensingAnalyzer {
@@ -55,6 +62,10 @@ enum AgentSensingAnalyzer {
       let memories = memories(for: agent, snapshot: snapshot)
       let runtimeProcesses = runtimeProcesses(for: agent, snapshot: snapshot)
       let evidence = snapshot.evidence.filter { $0.assetId == agent.id }
+      let latestActivityAt =
+        ([agent.lastSeenAt, agent.lastScannedAt]
+        + runtimeProcesses.map(\.lastSeenAt)
+        + evidence.map(\.observedAt)).max() ?? agent.lastSeenAt
       return AgentSensingProfile(
         agent: agent,
         mcpCount: mcpServers.count,
@@ -67,18 +78,26 @@ enum AgentSensingAnalyzer {
           agent: agent,
           mcpServers: mcpServers,
           skills: skills
-        )
+        ),
+        latestActivityAt: latestActivityAt,
+        activitySignalCount: runtimeProcesses.count * 4 + evidence.count * 2 + mcpServers.count
+          + skills.count + contexts.count + memories.count
       )
     }
-    .sorted {
-      if $0.isRuntimeActive != $1.isRuntimeActive {
-        return $0.isRuntimeActive && !$1.isRuntimeActive
-      }
-      if $0.agent.confidence == $1.agent.confidence {
-        return $0.agent.displayName < $1.agent.displayName
-      }
-      return $0.agent.confidence > $1.agent.confidence
+    .sorted(by: usageSort)
+  }
+
+  static func usageSort(_ lhs: AgentSensingProfile, _ rhs: AgentSensingProfile) -> Bool {
+    if lhs.latestActivityAt != rhs.latestActivityAt {
+      return lhs.latestActivityAt > rhs.latestActivityAt
     }
+    if lhs.activitySignalCount != rhs.activitySignalCount {
+      return lhs.activitySignalCount > rhs.activitySignalCount
+    }
+    if lhs.agent.confidence != rhs.agent.confidence {
+      return lhs.agent.confidence > rhs.agent.confidence
+    }
+    return lhs.agent.displayName < rhs.agent.displayName
   }
 
   static func mcpServers(for agent: AgentAsset, snapshot: DiscoverySnapshot) -> [MCPServerAsset] {
