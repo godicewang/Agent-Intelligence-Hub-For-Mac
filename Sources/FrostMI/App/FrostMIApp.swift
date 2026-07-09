@@ -12,6 +12,18 @@ struct FrostMIApp: App {
     if CommandLine.arguments.contains("--runtime-sensing-bench") {
       Foundation.exit(RuntimeSensingBench.run())
     }
+    if CommandLine.arguments.contains("--runtime-event-store-self-test") {
+      Foundation.exit(RuntimeEventSelfTests.runStoreSelfTest())
+    }
+    if CommandLine.arguments.contains("--fsevents-self-test") {
+      Foundation.exit(RuntimeEventSelfTests.runFSEventsSelfTest())
+    }
+    if CommandLine.arguments.contains("--mcp-wrapper-self-test") {
+      Foundation.exit(MCPStdioWrapper.runSelfTest())
+    }
+    if CommandLine.arguments.contains("--mcp-stdio-wrapper") {
+      Foundation.exit(MCPStdioWrapper.run())
+    }
     if CommandLine.arguments.contains("--discovery-print-summary") {
       Foundation.exit(DiscoveryDiagnostics.printColdScanSummary())
     }

@@ -28,6 +28,8 @@
     "allowExtraAgents": false,
     "runtimeProcessesMinCount": 2,
     "evidenceMinCount": 12,
+    "runtimeEventsMinCount": 13,
+    "sessionGraphEdgesMinCount": 11,
     "exactCounts": {
       "agents": 2,
       "runtimeProcesses": 2,

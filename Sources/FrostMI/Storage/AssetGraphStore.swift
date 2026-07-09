@@ -145,6 +145,8 @@ final class AssetGraphStore: @unchecked Sendable {
 
   func exportJSONL(to url: URL) throws {
     let snapshot = try loadSnapshot()
+    let runtimeEvents = try loadRuntimeEvents()
+    let runtimeSessionGraphs = try loadRuntimeSessionGraphs()
     var lines: [String] = []
     try append(snapshot.agents, kind: "agent", to: &lines)
     try append(snapshot.mcpServers, kind: "mcpServer", to: &lines)
@@ -155,10 +157,35 @@ final class AssetGraphStore: @unchecked Sendable {
     try append(snapshot.evidence, kind: "evidence", to: &lines)
     try append(snapshot.permissionStates, kind: "permissionState", to: &lines)
     try append(snapshot.events, kind: "event", to: &lines)
+    try append(runtimeEvents, kind: "runtimeEvent", to: &lines)
+    try append(runtimeSessionGraphs, kind: "runtimeSessionGraph", to: &lines)
     try FileManager.default.createDirectory(
       at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     let output = lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n"
     try output.write(to: url, atomically: true, encoding: .utf8)
+  }
+
+  @discardableResult
+  func appendRuntimeEvents(_ events: [RuntimeEventRecord]) throws -> [RuntimeSessionGraph] {
+    try lock.withLock {
+      guard !events.isEmpty else {
+        return try database.loadAll(RuntimeSessionGraph.self, kind: .runtimeSessionGraph)
+      }
+      let runtimeStore = RuntimeEventStore(database: database)
+      return try runtimeStore.append(events)
+    }
+  }
+
+  func loadRuntimeEvents() throws -> [RuntimeEventRecord] {
+    try lock.withLock {
+      try database.loadAll(RuntimeEventRecord.self, kind: .runtimeEvent)
+    }
+  }
+
+  func loadRuntimeSessionGraphs() throws -> [RuntimeSessionGraph] {
+    try lock.withLock {
+      try database.loadAll(RuntimeSessionGraph.self, kind: .runtimeSessionGraph)
+    }
   }
 
   private func persist(_ snapshot: DiscoverySnapshot) throws {

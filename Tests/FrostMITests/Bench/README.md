@@ -55,6 +55,8 @@ The static bench has strong signal for cold-start inventory quality because it c
 The dynamic runtime bench is intentionally smaller, but stricter per fixture. It validates:
 
 - input event volume, session count, and event-kind breadth,
+- persisted `RuntimeEventRecord` counts,
+- reconstructed `RuntimeSessionGraph` nodes and edges,
 - exact asset counts for the runtime fixture,
 - no unexpected Agent candidates unless explicitly allowed,
 - no duplicate Agents, runtime PIDs, Context paths, or Memory paths,
@@ -65,7 +67,7 @@ The dynamic runtime bench is intentionally smaller, but stricter per fixture. It
 - evidence and runtime process links back to an Agent,
 - open capability gaps that should guide the next implementation cycle.
 
-This means the runtime bench now checks both coverage and precision: "did FrostMI see the runtime behavior" and "did it attribute that behavior to the right Agent without inventing extra assets." A passing runtime fixture does not mean the runtime module is complete; `openCapabilityGaps` intentionally lists unimplemented target capabilities such as taint propagation, session graph reconstruction, policy verdicts, real Network Extension flow capture, and degraded-mode explanation.
+This means the runtime bench now checks both coverage and precision: "did FrostMI see the runtime behavior", "did it persist the observable event stream", "did it rebuild ordered session edges", and "did it attribute that behavior to the right Agent without inventing extra assets." A passing runtime fixture does not mean the runtime module is complete; `openCapabilityGaps` intentionally lists unimplemented target capabilities such as policy verdict UX, real Endpoint Security auth events, real Network Extension flow capture, and degraded-mode explanation.
 
 ## Runtime Sensing Commands
 
@@ -83,6 +85,18 @@ Scripts/run_runtime_sensing_bench.sh --target
 
 Regression mode fails only on current-contract regressions. Target mode also fails when `openCapabilityGaps` is non-zero, making it useful for planning the next runtime implementation cycle. The target path derives resolved gaps from event order, taint flow, policy verdicts, cross-agent sessions, permission states, and linked runtime evidence instead of blindly trusting manifest text.
 
+Focused runtime foundation checks:
+
+```bash
+swift run FrostMI --runtime-event-store-self-test
+swift run FrostMI --mcp-wrapper-self-test
+swift run FrostMI --fsevents-self-test
+```
+
+- `--runtime-event-store-self-test` validates SQLite runtime event persistence and session graph edge reconstruction.
+- `--mcp-wrapper-self-test` launches a real local MCP stdio wrapper around a fixture JSON-RPC server, forwards stdin/stdout unchanged, and validates captured `tools/list`, `tools/call`, and result events.
+- `--fsevents-self-test` starts a real macOS FSEvents stream and writes to a temporary local path. It is strict by default; `Scripts/run_bench_tests.sh` uses `--allow-degraded` so environments that start FSEvents but do not deliver callbacks are reported as degraded rather than replaced with fake events.
+
 Current target mode is expected to keep entitlement-gated gaps open until FrostMI has real Endpoint Security and Network Extension capture:
 
 - `endpoint_security_auth_events`
@@ -98,4 +112,4 @@ Current dynamic baselines:
 - `runtime/atomic-endpoint/process-file-network/`: validates endpoint telemetry shape inspired by Atomic Red Team, osquery, and Sigma: process identity, workspace file changes, outbound model endpoint evidence, and permission state.
 - `runtime/atomic-endpoint/permission-degraded/`: validates degraded runtime visibility when FSEvents is available but Endpoint Security and Network Extension are missing entitlements.
 
-`Scripts/run_bench_tests.sh` includes this runtime bench, so the full bench now covers both cold-start static discovery and dynamic runtime sensing.
+`Scripts/run_bench_tests.sh` includes the runtime foundation checks and this runtime bench, so the full bench now covers cold-start static discovery, dynamic runtime sensing, runtime event storage, MCP stdio capture, and FSEvents startup/degraded reporting.

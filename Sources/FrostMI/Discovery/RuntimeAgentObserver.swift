@@ -12,7 +12,7 @@ final class RuntimeAgentObserver: @unchecked Sendable {
   private let store: AssetGraphStore
   private let config: DiscoveryConfiguration
   private let pendingPathLock = NSLock()
-  private var pendingChangedPaths: Set<URL> = []
+  private var pendingChangedPaths: [String: FSEventsChange] = [:]
   private var isFileSystemBatchScheduled = false
 
   init(
@@ -61,14 +61,15 @@ final class RuntimeAgentObserver: @unchecked Sendable {
   }
 
   private static func processFileSystemChanges(
-    changedPaths: [URL],
+    changes: [FSEventsChange],
     keywordScanner: KeywordFileScanner,
     store: AssetGraphStore,
     onUpdate: @escaping @MainActor (DiscoverySnapshot) -> Void
   ) {
     fileSystemProcessingQueue.async {
-      let relevantPaths = filteredChangedPaths(changedPaths)
-      guard !relevantPaths.isEmpty else { return }
+      let relevantChanges = filteredChangedChanges(changes)
+      guard !relevantChanges.isEmpty else { return }
+      let relevantPaths = relevantChanges.map(\.path)
       let deadline = Date().addingTimeInterval(3)
       var result = DiscoveryScanResult()
       result.events.append(
@@ -79,6 +80,7 @@ final class RuntimeAgentObserver: @unchecked Sendable {
           message: "FSEvents reported \(relevantPaths.count) relevant changed paths.",
           createdAt: Date()
         ))
+      _ = try? store.appendRuntimeEvents(runtimeEvents(from: relevantChanges))
       result.merge(
         keywordScanner.scan(
           additionalRoots: relevantPaths.map {
@@ -95,14 +97,16 @@ final class RuntimeAgentObserver: @unchecked Sendable {
   }
 
   private func scheduleFileSystemBatch(
-    changedPaths: [URL],
+    changedPaths: [FSEventsChange],
     onUpdate: @escaping @MainActor (DiscoverySnapshot) -> Void
   ) {
-    let relevantPaths = Self.filteredChangedPaths(changedPaths)
-    guard !relevantPaths.isEmpty else { return }
+    let relevantChanges = Self.filteredChangedChanges(changedPaths)
+    guard !relevantChanges.isEmpty else { return }
 
     pendingPathLock.lock()
-    pendingChangedPaths.formUnion(relevantPaths)
+    for change in relevantChanges {
+      pendingChangedPaths[change.path.path] = change
+    }
     guard !isFileSystemBatchScheduled else {
       pendingPathLock.unlock()
       return
@@ -112,13 +116,13 @@ final class RuntimeAgentObserver: @unchecked Sendable {
 
     Self.fileSystemProcessingQueue.asyncAfter(deadline: .now() + Self.fileSystemBatchWindow) {
       self.pendingPathLock.lock()
-      let paths = Array(self.pendingChangedPaths)
+      let changes = Array(self.pendingChangedPaths.values)
       self.pendingChangedPaths.removeAll()
       self.isFileSystemBatchScheduled = false
       self.pendingPathLock.unlock()
 
       Self.processFileSystemChanges(
-        changedPaths: paths,
+        changes: changes,
         keywordScanner: self.keywordScanner,
         store: self.store,
         onUpdate: onUpdate
@@ -126,13 +130,46 @@ final class RuntimeAgentObserver: @unchecked Sendable {
     }
   }
 
-  private static func filteredChangedPaths(_ paths: [URL]) -> [URL] {
-    paths.map(\.standardizedFileURL).filter { url in
+  private static func filteredChangedChanges(_ changes: [FSEventsChange]) -> [FSEventsChange] {
+    changes.map { change in
+      FSEventsChange(
+        path: change.path.standardizedFileURL,
+        eventId: change.eventId,
+        flags: change.flags,
+        observedAt: change.observedAt
+      )
+    }.filter { change in
+      let url = change.path
       let ignoredNames: Set<String> = [
         ".build", "build", "dist", ".git", ".swiftpm", "deriveddata", "node_modules",
       ]
       return url.pathComponents.map { $0.lowercased() }.allSatisfy { !ignoredNames.contains($0) }
-    }.uniqueSorted()
+    }
+    .reduce(into: [String: FSEventsChange]()) { partial, change in
+      partial[change.path.path] = change
+    }
+    .values
+    .sorted { $0.path.path < $1.path.path }
+  }
+
+  private static func runtimeEvents(from changes: [FSEventsChange]) -> [RuntimeEventRecord] {
+    changes.map { change in
+      RuntimeEventRecord(
+        sessionId: RuntimeEventRecord.localSessionId(
+          prefix: "fsevents", timestamp: change.observedAt),
+        kind: .fileEvent,
+        timestamp: change.observedAt,
+        source: "macos-fsevents",
+        path: change.path.path,
+        message: "FSEvents observed \(change.flagSummary) change.",
+        correlationKey: String(change.eventId),
+        metadata: [
+          "eventId": String(change.eventId),
+          "flags": String(change.flags),
+          "flagSummary": change.flagSummary,
+        ]
+      )
+    }
   }
 
   @MainActor

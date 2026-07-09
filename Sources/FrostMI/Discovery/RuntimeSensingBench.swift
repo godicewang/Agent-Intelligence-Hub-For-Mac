@@ -29,6 +29,9 @@ enum RuntimeSensingBench {
             contextFiles: 0,
             memoryAssets: 0,
             permissionStates: 0,
+            runtimeEvents: 0,
+            sessionGraphs: 0,
+            sessionGraphEdges: 0,
             inputEvents: 0,
             sessions: 0,
             eventKinds: 0,
@@ -50,11 +53,11 @@ enum RuntimeSensingBench {
       "fixtures=\(rows.count) passed=\(passed) failed=\(failed) elapsed=\(formatSeconds(Date().timeIntervalSince(startedAt)))s"
     )
     print(
-      "totals inputEvents=\(rows.map(\.inputEvents).reduce(0, +)) sessions=\(rows.map(\.sessions).reduce(0, +)) agents=\(rows.map(\.agents).reduce(0, +)) runtimeProcesses=\(rows.map(\.runtimeProcesses).reduce(0, +)) evidence=\(rows.map(\.evidence).reduce(0, +)) context=\(rows.map(\.contextFiles).reduce(0, +)) memory=\(rows.map(\.memoryAssets).reduce(0, +)) permissionStates=\(rows.map(\.permissionStates).reduce(0, +)) resolvedCapabilityGaps=\(rows.map(\.resolvedGaps).reduce(0, +)) openCapabilityGaps=\(rows.map(\.openGaps).reduce(0, +))"
+      "totals inputEvents=\(rows.map(\.inputEvents).reduce(0, +)) sessions=\(rows.map(\.sessions).reduce(0, +)) runtimeEvents=\(rows.map(\.runtimeEvents).reduce(0, +)) sessionGraphs=\(rows.map(\.sessionGraphs).reduce(0, +)) graphEdges=\(rows.map(\.sessionGraphEdges).reduce(0, +)) agents=\(rows.map(\.agents).reduce(0, +)) runtimeProcesses=\(rows.map(\.runtimeProcesses).reduce(0, +)) evidence=\(rows.map(\.evidence).reduce(0, +)) context=\(rows.map(\.contextFiles).reduce(0, +)) memory=\(rows.map(\.memoryAssets).reduce(0, +)) permissionStates=\(rows.map(\.permissionStates).reduce(0, +)) resolvedCapabilityGaps=\(rows.map(\.resolvedGaps).reduce(0, +)) openCapabilityGaps=\(rows.map(\.openGaps).reduce(0, +))"
     )
     for row in rows {
       print(
-        "- \(row.id) \(row.passed ? "PASS" : "FAIL") baseline=\(row.baseline) inputEvents=\(row.inputEvents) sessions=\(row.sessions) eventKinds=\(row.eventKinds) agents=\(row.agents) runtimeProcesses=\(row.runtimeProcesses) evidence=\(row.evidence) context=\(row.contextFiles) memory=\(row.memoryAssets) permissionStates=\(row.permissionStates) resolvedCapabilityGaps=\(row.resolvedGaps) openCapabilityGaps=\(row.openGaps) elapsed=\(formatSeconds(row.elapsedSeconds))s"
+        "- \(row.id) \(row.passed ? "PASS" : "FAIL") baseline=\(row.baseline) inputEvents=\(row.inputEvents) sessions=\(row.sessions) eventKinds=\(row.eventKinds) runtimeEvents=\(row.runtimeEvents) sessionGraphs=\(row.sessionGraphs) graphEdges=\(row.sessionGraphEdges) agents=\(row.agents) runtimeProcesses=\(row.runtimeProcesses) evidence=\(row.evidence) context=\(row.contextFiles) memory=\(row.memoryAssets) permissionStates=\(row.permissionStates) resolvedCapabilityGaps=\(row.resolvedGaps) openCapabilityGaps=\(row.openGaps) elapsed=\(formatSeconds(row.elapsedSeconds))s"
       )
       for failure in row.failures {
         print("  ! \(failure)")
@@ -83,9 +86,14 @@ enum RuntimeSensingBench {
     let context = RuntimeBenchContext(root: root)
     let eventsURL = root.appendingPathComponent(manifest.input.events)
     let events = try loadEvents(from: eventsURL)
-    let snapshot = try snapshot(from: events, context: context)
-    let failures = validationFailures(snapshot: snapshot, expected: manifest.expected)
-    let assessment = RuntimeBenchAssessment(events: events, snapshot: snapshot)
+    let output = try snapshot(from: events, context: context)
+    let snapshot = output.snapshot
+    let failures = validationFailures(output: output, expected: manifest.expected)
+    let assessment = RuntimeBenchAssessment(
+      events: events,
+      snapshot: snapshot,
+      sessionGraphs: output.sessionGraphs
+    )
     let openGaps = manifest.expected.knownGaps.filter { !assessment.resolves($0.capability) }
 
     return RuntimeBenchRow(
@@ -99,6 +107,9 @@ enum RuntimeSensingBench {
       contextFiles: snapshot.contextFiles.count,
       memoryAssets: snapshot.memories.count,
       permissionStates: snapshot.permissionStates.count,
+      runtimeEvents: output.runtimeEvents.count,
+      sessionGraphs: output.sessionGraphs.count,
+      sessionGraphEdges: output.sessionGraphs.map(\.edgeCount).reduce(0, +),
       inputEvents: events.count,
       sessions: Set(events.compactMap(\.sessionId)).count,
       eventKinds: Set(events.map(\.kind)).count,
@@ -111,7 +122,7 @@ enum RuntimeSensingBench {
   private static func snapshot(
     from events: [RuntimeBenchEvent],
     context: RuntimeBenchContext
-  ) throws -> DiscoverySnapshot {
+  ) throws -> RuntimeBenchOutput {
     let registry = try FingerprintRegistry.bundled()
     let config = DiscoveryConfiguration(
       homeDirectory: context.home,
@@ -152,7 +163,42 @@ enum RuntimeSensingBench {
       .appendingPathComponent("FrostMIRuntimeBench-\(UUID().uuidString)", isDirectory: true)
       .appendingPathComponent("runtime.sqlite")
     let store = try AssetGraphStore(database: FrostDatabase(url: storeURL))
-    return try store.merge(result)
+    let snapshot = try store.merge(result)
+    let runtimeEvents = events.map { runtimeEvent(from: $0, context: context) }
+    let sessionGraphs = try store.appendRuntimeEvents(runtimeEvents)
+    return RuntimeBenchOutput(
+      snapshot: snapshot,
+      runtimeEvents: runtimeEvents,
+      sessionGraphs: sessionGraphs
+    )
+  }
+
+  private static func runtimeEvent(
+    from event: RuntimeBenchEvent,
+    context: RuntimeBenchContext
+  ) -> RuntimeEventRecord {
+    RuntimeEventRecord(
+      sessionId: event.sessionId
+        ?? RuntimeEventRecord.localSessionId(prefix: "runtime-bench", timestamp: event.timestampDate),
+      agentName: event.agent,
+      kind: event.runtimeEventKind,
+      timestamp: event.timestampDate,
+      source: event.source ?? "runtime-bench",
+      processId: event.pid,
+      parentProcessId: event.ppid,
+      path: event.path.map(context.expand),
+      url: event.url,
+      method: event.kind == .toolCall ? "tools/call" : nil,
+      toolName: event.toolName,
+      provider: event.provider,
+      message: event.message,
+      riskSignal: event.riskSignal,
+      untrusted: event.untrusted ?? false,
+      correlationKey: event.sessionId,
+      metadata: [
+        "benchKind": event.kind.rawValue
+      ]
+    )
   }
 
   private static func merge(
@@ -284,9 +330,10 @@ enum RuntimeSensingBench {
   }
 
   private static func validationFailures(
-    snapshot: DiscoverySnapshot,
+    output: RuntimeBenchOutput,
     expected: RuntimeBenchExpected
   ) -> [String] {
+    let snapshot = output.snapshot
     var failures: [String] = []
     let agentNamesById = Dictionary(
       uniqueKeysWithValues: snapshot.agents.map {
@@ -338,6 +385,17 @@ enum RuntimeSensingBench {
     if let exactCounts = expected.exactCounts {
       failures.append(contentsOf: exactCountFailures(snapshot: snapshot, exactCounts: exactCounts))
     }
+    if output.runtimeEvents.count < expected.runtimeEventsMinCount {
+      failures.append(
+        "expected runtimeEvents >= \(expected.runtimeEventsMinCount), got \(output.runtimeEvents.count)"
+      )
+    }
+    if output.sessionGraphs.map(\.edgeCount).reduce(0, +) < expected.sessionGraphEdgesMinCount {
+      failures.append(
+        "expected sessionGraphEdges >= \(expected.sessionGraphEdgesMinCount), got \(output.sessionGraphs.map(\.edgeCount).reduce(0, +))"
+      )
+    }
+    failures.append(contentsOf: sessionGraphFailures(output: output))
 
     failures.append(
       contentsOf: duplicateFailures(
@@ -405,6 +463,27 @@ enum RuntimeSensingBench {
       for runtimeProcess in snapshot.runtimeProcesses where runtimeProcess.sourceAgentId == nil {
         failures.append(
           "expected runtime process \(runtimeProcess.processName) to be linked to an agent")
+      }
+    }
+    return failures
+  }
+
+  private static func sessionGraphFailures(output: RuntimeBenchOutput) -> [String] {
+    let groupedEvents = Dictionary(grouping: output.runtimeEvents, by: \.sessionId)
+    var failures: [String] = []
+    for (sessionId, events) in groupedEvents {
+      guard let graph = output.sessionGraphs.first(where: { $0.sessionId == sessionId }) else {
+        failures.append("expected session graph for \(sessionId)")
+        continue
+      }
+      if graph.nodeCount != events.count {
+        failures.append(
+          "expected session graph \(sessionId) nodes=\(events.count), got \(graph.nodeCount)")
+      }
+      let expectedEdges = max(0, events.count - 1)
+      if graph.edgeCount != expectedEdges {
+        failures.append(
+          "expected session graph \(sessionId) edges=\(expectedEdges), got \(graph.edgeCount)")
       }
     }
     return failures
@@ -568,6 +647,9 @@ private struct RuntimeBenchRow {
   var contextFiles: Int
   var memoryAssets: Int
   var permissionStates: Int
+  var runtimeEvents: Int
+  var sessionGraphs: Int
+  var sessionGraphEdges: Int
   var inputEvents: Int
   var sessions: Int
   var eventKinds: Int
@@ -577,9 +659,16 @@ private struct RuntimeBenchRow {
   var failures: [String]
 }
 
+private struct RuntimeBenchOutput {
+  var snapshot: DiscoverySnapshot
+  var runtimeEvents: [RuntimeEventRecord]
+  var sessionGraphs: [RuntimeSessionGraph]
+}
+
 private struct RuntimeBenchAssessment {
   var events: [RuntimeBenchEvent]
   var snapshot: DiscoverySnapshot
+  var sessionGraphs: [RuntimeSessionGraph]
 
   private var sortedEvents: [RuntimeBenchEvent] {
     events.sorted { $0.timestampDate < $1.timestampDate }
@@ -617,11 +706,7 @@ private struct RuntimeBenchAssessment {
   }
 
   private var hasSessionGraphEdges: Bool {
-    sessions.contains { sessionEvents in
-      zip(sessionEvents, sessionEvents.dropFirst()).contains { lhs, rhs in
-        lhs.kind.graphOrder < rhs.kind.graphOrder
-      }
-    }
+    sessionGraphs.contains { $0.edgeCount > 0 }
   }
 
   private var hasTurnOrderReconstruction: Bool {
@@ -761,6 +846,8 @@ private struct RuntimeBenchExpected: Decodable {
   var allowExtraAgents: Bool = false
   var runtimeProcessesMinCount: Int = 0
   var evidenceMinCount: Int = 0
+  var runtimeEventsMinCount: Int = 0
+  var sessionGraphEdgesMinCount: Int = 0
   var exactCounts: RuntimeBenchExactCounts?
   var contextFiles: [String] = []
   var memoryAssets: [String] = []
@@ -778,6 +865,8 @@ private struct RuntimeBenchExpected: Decodable {
     case allowExtraAgents
     case runtimeProcessesMinCount
     case evidenceMinCount
+    case runtimeEventsMinCount
+    case sessionGraphEdgesMinCount
     case exactCounts
     case contextFiles
     case memoryAssets
@@ -798,6 +887,10 @@ private struct RuntimeBenchExpected: Decodable {
     runtimeProcessesMinCount =
       try container.decodeIfPresent(Int.self, forKey: .runtimeProcessesMinCount) ?? 0
     evidenceMinCount = try container.decodeIfPresent(Int.self, forKey: .evidenceMinCount) ?? 0
+    runtimeEventsMinCount =
+      try container.decodeIfPresent(Int.self, forKey: .runtimeEventsMinCount) ?? 0
+    sessionGraphEdgesMinCount =
+      try container.decodeIfPresent(Int.self, forKey: .sessionGraphEdgesMinCount) ?? 0
     exactCounts =
       try container.decodeIfPresent(RuntimeBenchExactCounts.self, forKey: .exactCounts)
     contextFiles = try container.decodeIfPresent([String].self, forKey: .contextFiles) ?? []
@@ -939,6 +1032,32 @@ private struct RuntimeBenchEvent: Decodable {
     default:
       .processObservation
     }
+  }
+
+  var runtimeEventKind: RuntimeEventKind {
+    switch kind {
+    case .process:
+      .processObservation
+    case .llmRequest:
+      .llmRequest
+    case .toolCall:
+      .toolCall
+    case .toolResult:
+      .toolResult
+    case .fileEvent:
+      isMemoryLikePath ? .memoryWrite : .fileEvent
+    case .networkEvent:
+      .networkEvent
+    case .permissionState:
+      .permissionState
+    }
+  }
+
+  private var isMemoryLikePath: Bool {
+    guard let path else { return false }
+    let lower = path.lowercased()
+    return lower.contains("memory") || lower.contains("session") || lower.contains("conversation")
+      || lower.contains("history")
   }
 }
 

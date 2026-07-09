@@ -21,6 +21,8 @@
     "allowExtraAgents": false,
     "runtimeProcessesMinCount": 1,
     "evidenceMinCount": 5,
+    "runtimeEventsMinCount": 6,
+    "sessionGraphEdgesMinCount": 5,
     "exactCounts": {
       "agents": 1,
       "runtimeProcesses": 1,
@@ -85,7 +87,7 @@
     "knownGaps": [
       {
         "capability": "session_graph_edges",
-        "reason": "The runtime bench currently validates observable event normalization, not full turn graph reconstruction."
+        "reason": "Resolved only when fixture events are persisted into RuntimeEventStore and rebuilt into graph edges."
       }
     ]
   }

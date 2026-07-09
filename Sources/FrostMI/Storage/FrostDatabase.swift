@@ -123,6 +123,8 @@ enum RecordKind: String {
   case contextFile
   case memory
   case runtimeProcess
+  case runtimeEvent
+  case runtimeSessionGraph
   case evidence
   case permissionState
   case event

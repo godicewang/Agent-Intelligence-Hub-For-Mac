@@ -32,8 +32,9 @@ FrostMI 当前界面只保留 **Agent Sensing** 一个主模块。它围绕 Mac 
 | 界面区域 | 当前作用 |
 | --- | --- |
 | Static Scan | 真实静态发现，发现 Claude Code、Cursor、Codex CLI、Gemini CLI、MCP、Skills、Context 和 Memory。 |
-| Runtime Monitor | 真实动态监控，使用进程快照、NSWorkspace 运行 App 视图、FSEvents 和权限状态，不伪造 Endpoint Security / Network Extension 遥测。 |
+| Runtime Monitor | 真实动态监控，使用进程快照、NSWorkspace 运行 App 视图、FSEvents、runtime event store 和权限状态，不伪造 Endpoint Security / Network Extension 遥测。 |
 | Agent Analysis | Agent 级聚合画像，整合静态资产、运行时进程、证据覆盖、风险和置信度。 |
+| Runtime Foundation | SQLite runtime event store、session graph 重建和 MCP stdio wrapper CLI，为后续工具调用审计、策略和回滚提供证据底座。 |
 
 其他产品方向暂不作为当前 UI 模块暴露，避免在真实能力接入前保留空占位入口。
 
@@ -44,8 +45,9 @@ The current FrostMI interface exposes **Agent Sensing** as the only primary modu
 | Area | Current Role |
 | --- | --- |
 | Static Scan | Real static discovery for Claude Code, Cursor, Codex CLI, Gemini CLI, MCP, Skills, Context, and Memory. |
-| Runtime Monitor | Real lightweight runtime monitoring using process snapshots, NSWorkspace running apps, FSEvents status, and permission states. |
+| Runtime Monitor | Real lightweight runtime monitoring using process snapshots, NSWorkspace running apps, FSEvents status, runtime event storage, and permission states. |
 | Agent Analysis | Agent-level rollup that joins static assets, runtime processes, evidence coverage, risk, and confidence. |
+| Runtime Foundation | SQLite runtime event store, session graph reconstruction, and an MCP stdio wrapper CLI for future tool-call audit, policy, and rollback. |
 
 Other product directions are intentionally not exposed as current UI modules until their real local capabilities are implemented.
 
@@ -65,6 +67,9 @@ Other product directions are intentionally not exposed as current UI modules unt
 - Agent Analysis separates running and inactive agents, sorted by recent observation and activity signals.
 - Real local Agent Discovery in Agent Sensing, including separate Codex CLI / Codex App recognition and Windsurf static discovery coverage.
 - Lightweight runtime monitoring with `ps` process snapshots, `NSWorkspace.runningApplications` desktop app attribution, FSEvents status, batched filesystem-change handling, and manual/periodic refresh.
+- Runtime event store backed by local SQLite records for observable process, file, LLM/tool, MCP, network, memory, and permission events.
+- Session graph reconstruction from persisted runtime events, preserving ordered event nodes and `next_observed` graph edges per session.
+- MCP stdio wrapper CLI that forwards real MCP stdin/stdout unchanged while capturing `tools/list`, `tools/call`, tool results, and JSON-RPC errors into the runtime event store.
 - Runtime Monitor dashboard with live signal meter, sensor status, runtime process list, and observation trail.
 - Agent-level analysis cards that join static MCP/Skill/Context/Memory assets with runtime process evidence and click-through detail.
 - Known Agent and custom Agent grouping.
@@ -147,7 +152,17 @@ For focused dynamic runtime sensing validation:
 Scripts/run_runtime_sensing_bench.sh
 ```
 
-The runtime bench currently uses six FrostMI-authored fixture scenarios across three families: TraceLab-style coding-agent loops, AgentDojo-style untrusted tool-result flows, and Atomic Red Team/osquery/Sigma-style endpoint telemetry. It validates input event volume, session breadth, exact fixture counts, process attribution, runtime Agent confidence, provider and workspace linkage, linked evidence, LLM/tool evidence, workspace file events, memory/session/history traces, network destination evidence, permission state normalization, duplicate control, and unexpected-Agent control. It also prints `openCapabilityGaps`, so a green regression run can still point to missing product capabilities.
+The runtime bench currently uses six FrostMI-authored fixture scenarios across three families: TraceLab-style coding-agent loops, AgentDojo-style untrusted tool-result flows, and Atomic Red Team/osquery/Sigma-style endpoint telemetry. It validates input event volume, session breadth, exact fixture counts, process attribution, runtime Agent confidence, provider and workspace linkage, linked evidence, LLM/tool evidence, workspace file events, memory/session/history traces, network destination evidence, permission state normalization, runtime event persistence, session graph edge reconstruction, duplicate control, and unexpected-Agent control. It also prints `openCapabilityGaps`, so a green regression run can still point to missing product capabilities.
+
+Additional focused runtime checks are included in the full bench:
+
+```bash
+swift run FrostMI --runtime-event-store-self-test
+swift run FrostMI --mcp-wrapper-self-test
+swift run FrostMI --fsevents-self-test --allow-degraded
+```
+
+`--fsevents-self-test` is strict by default. The full bench uses `--allow-degraded` because some command-runner environments can start an FSEvents stream but fail to deliver callbacks; that state is reported explicitly and is not replaced with fake telemetry.
 
 For target-mode evaluation that fails until known runtime gaps are implemented:
 
@@ -205,11 +220,11 @@ The following capabilities are product directions and are not exposed as current
 - Profile Compiler for user, project, agent, workflow, and security profiles.
 - Cross-Agent Assistant grounded in local SQL, FTS, vector retrieval, and session graph traversal.
 - Model Router with local and external providers behind a privacy-preserving interface.
-- Session Graph reconstruction from observable prompts, tools, commands, files, network, and memory writes.
+- User-facing Session Graph exploration, policy verdict overlays, and rollback UX on top of the existing runtime graph foundation.
 - FrostADR Runtime policy, approval, rewrite, block, audit, and response workflows.
 
 ## Status
 
-FrostMI is an early-stage macOS endpoint intelligence project. The current app intentionally exposes only the real Agent Sensing foundation: static discovery, lightweight runtime monitoring, and Agent-level analysis. Prompt Copilot, Memory/Profile, Assistant, Model Router, full Endpoint Security integration, Network Extension enforcement, MCP wrapping, and Local LLM Proxy features remain product directions, but they are not presented as active UI modules yet.
+FrostMI is an early-stage macOS endpoint intelligence project. The current app intentionally exposes only the real Agent Sensing foundation: static discovery, lightweight runtime monitoring, Agent-level analysis, runtime event storage, session graph reconstruction, and MCP stdio capture foundation. Prompt Copilot, Memory/Profile, Assistant, Model Router, full Endpoint Security integration, Network Extension enforcement, Local LLM Proxy, and user-facing MCP policy UX remain product directions, but they are not presented as active UI modules yet.
 
 If this direction is useful to you, please Star the repository so more Mac AI, agent intelligence, and endpoint security builders can find it.
