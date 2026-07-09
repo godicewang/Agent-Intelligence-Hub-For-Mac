@@ -260,6 +260,11 @@ enum RuntimeSensingBench {
     expected: RuntimeBenchExpected
   ) -> [String] {
     var failures: [String] = []
+    let agentNamesById = Dictionary(
+      uniqueKeysWithValues: snapshot.agents.map {
+        ($0.id, $0.normalizedName)
+      })
+
     for expectedAgent in expected.agents {
       let matches = snapshot.agents.filter { $0.normalizedName == expectedAgent.normalizedName }
       if matches.isEmpty {
@@ -280,6 +285,19 @@ enum RuntimeSensingBench {
       }
     }
 
+    for absentAgent in expected.absentAgents
+    where snapshot.agents.contains(where: { $0.normalizedName == absentAgent }) {
+      failures.append("expected agent \(absentAgent) to be absent")
+    }
+
+    if !expected.allowExtraAgents {
+      let expectedAgentNames = Set(expected.agents.map(\.normalizedName))
+      let actualAgentNames = Set(snapshot.agents.map(\.normalizedName))
+      for extraAgent in actualAgentNames.subtracting(expectedAgentNames).sorted() {
+        failures.append("unexpected agent \(extraAgent)")
+      }
+    }
+
     if snapshot.runtimeProcesses.count < expected.runtimeProcessesMinCount {
       failures.append(
         "expected runtimeProcesses >= \(expected.runtimeProcessesMinCount), got \(snapshot.runtimeProcesses.count)"
@@ -289,6 +307,23 @@ enum RuntimeSensingBench {
       failures.append(
         "expected evidence >= \(expected.evidenceMinCount), got \(snapshot.evidence.count)")
     }
+    if let exactCounts = expected.exactCounts {
+      failures.append(contentsOf: exactCountFailures(snapshot: snapshot, exactCounts: exactCounts))
+    }
+
+    failures.append(
+      contentsOf: duplicateFailures(
+        label: "agent normalized name", values: snapshot.agents.map(\.normalizedName)))
+    failures.append(
+      contentsOf: duplicateFailures(
+        label: "runtime pid", values: snapshot.runtimeProcesses.map { String($0.pid) }))
+    failures.append(
+      contentsOf: duplicateFailures(
+        label: "context path", values: snapshot.contextFiles.map(\.path)))
+    failures.append(
+      contentsOf: duplicateFailures(
+        label: "memory path", values: snapshot.memories.map(\.path)))
+
     for path in expected.contextFiles {
       if !snapshot.contextFiles.map(\.path).contains(where: { $0.hasSuffix(path) || $0 == path }) {
         failures.append("expected context path \(path)")
@@ -317,7 +352,130 @@ enum RuntimeSensingBench {
         failures.append("expected evidence summary containing \(summary)")
       }
     }
+    for expectedProcess in expected.runtimeProcesses {
+      if !runtimeProcessExists(
+        expectedProcess,
+        in: snapshot.runtimeProcesses,
+        agentNamesById: agentNamesById)
+      {
+        failures.append("expected runtime process \(expectedProcess.describe())")
+      }
+    }
+    for expectedEvidence in expected.requiredEvidence {
+      if !evidenceExists(
+        expectedEvidence,
+        in: snapshot.evidence,
+        agentNamesById: agentNamesById)
+      {
+        failures.append("expected runtime evidence \(expectedEvidence.describe())")
+      }
+    }
+    if expected.requireLinkedEvidence {
+      for evidence in snapshot.evidence where evidence.assetId == nil {
+        failures.append("expected evidence \(evidence.summary) to be linked to an agent")
+      }
+      for runtimeProcess in snapshot.runtimeProcesses where runtimeProcess.sourceAgentId == nil {
+        failures.append(
+          "expected runtime process \(runtimeProcess.processName) to be linked to an agent")
+      }
+    }
     return failures
+  }
+
+  private static func exactCountFailures(
+    snapshot: DiscoverySnapshot,
+    exactCounts: RuntimeBenchExactCounts
+  ) -> [String] {
+    [
+      ("agents", exactCounts.agents, snapshot.agents.count),
+      ("runtimeProcesses", exactCounts.runtimeProcesses, snapshot.runtimeProcesses.count),
+      ("evidence", exactCounts.evidence, snapshot.evidence.count),
+      ("contextFiles", exactCounts.contextFiles, snapshot.contextFiles.count),
+      ("memoryAssets", exactCounts.memoryAssets, snapshot.memories.count),
+      ("permissionStates", exactCounts.permissionStates, snapshot.permissionStates.count),
+    ].compactMap { label, expected, actual in
+      guard let expected, expected != actual else { return nil }
+      return "expected exact \(label)=\(expected), got \(actual)"
+    }
+  }
+
+  private static func duplicateFailures(label: String, values: [String]) -> [String] {
+    Dictionary(grouping: values, by: { $0 })
+      .filter { $0.value.count > 1 }
+      .keys
+      .sorted()
+      .map { "unexpected duplicate \(label) \($0)" }
+  }
+
+  private static func runtimeProcessExists(
+    _ expectedProcess: ExpectedRuntimeProcess,
+    in runtimeProcesses: [RuntimeProcessAsset],
+    agentNamesById: [UUID: String]
+  ) -> Bool {
+    runtimeProcesses.contains { runtimeProcess in
+      if let agent = expectedProcess.agent {
+        guard let sourceAgentId = runtimeProcess.sourceAgentId,
+          agentNamesById[sourceAgentId] == agent
+        else { return false }
+      }
+      if let processName = expectedProcess.processName,
+        runtimeProcess.processName != processName
+      {
+        return false
+      }
+      if let minScore = expectedProcess.minScore,
+        runtimeProcess.agentCandidateScore < minScore
+      {
+        return false
+      }
+      if let workspaceSuffix = expectedProcess.workspaceSuffix,
+        !(runtimeProcess.workspaceTouched?.hasSuffix(workspaceSuffix) ?? false)
+      {
+        return false
+      }
+      if !Set(expectedProcess.providers).isSubset(of: Set(runtimeProcess.connectedLLMProviders)) {
+        return false
+      }
+      return true
+    }
+  }
+
+  private static func evidenceExists(
+    _ expectedEvidence: ExpectedRuntimeEvidence,
+    in evidence: [DiscoveryEvidence],
+    agentNamesById: [UUID: String]
+  ) -> Bool {
+    evidence.contains { item in
+      if let agent = expectedEvidence.agent {
+        guard let assetId = item.assetId, agentNamesById[assetId] == agent else { return false }
+      }
+      if let type = expectedEvidence.type,
+        item.evidenceType.rawValue != type
+      {
+        return false
+      }
+      if let source = expectedEvidence.source,
+        item.source != source
+      {
+        return false
+      }
+      if let processId = expectedEvidence.processId,
+        item.processId != processId
+      {
+        return false
+      }
+      if let pathSuffix = expectedEvidence.pathSuffix,
+        !(item.path?.hasSuffix(pathSuffix) ?? false)
+      {
+        return false
+      }
+      if let summaryContains = expectedEvidence.summaryContains,
+        !item.summary.localizedCaseInsensitiveContains(summaryContains)
+      {
+        return false
+      }
+      return true
+    }
   }
 
   private static func loadEvents(from url: URL) throws -> [RuntimeBenchEvent] {
@@ -401,33 +559,49 @@ private struct RuntimeBenchInput: Decodable {
 
 private struct RuntimeBenchExpected: Decodable {
   var agents: [ExpectedRuntimeAgent] = []
+  var absentAgents: [String] = []
+  var allowExtraAgents: Bool = false
   var runtimeProcessesMinCount: Int = 0
   var evidenceMinCount: Int = 0
+  var exactCounts: RuntimeBenchExactCounts?
   var contextFiles: [String] = []
   var memoryAssets: [String] = []
   var permissionStates: [ExpectedPermissionState] = []
   var requiredEventKinds: [String] = []
   var requiredEvidenceSummaries: [String] = []
+  var runtimeProcesses: [ExpectedRuntimeProcess] = []
+  var requiredEvidence: [ExpectedRuntimeEvidence] = []
+  var requireLinkedEvidence: Bool = false
   var knownGaps: [ExpectedRuntimeGap] = []
 
   private enum CodingKeys: String, CodingKey {
     case agents
+    case absentAgents
+    case allowExtraAgents
     case runtimeProcessesMinCount
     case evidenceMinCount
+    case exactCounts
     case contextFiles
     case memoryAssets
     case permissionStates
     case requiredEventKinds
     case requiredEvidenceSummaries
+    case runtimeProcesses
+    case requiredEvidence
+    case requireLinkedEvidence
     case knownGaps
   }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     agents = try container.decodeIfPresent([ExpectedRuntimeAgent].self, forKey: .agents) ?? []
+    absentAgents = try container.decodeIfPresent([String].self, forKey: .absentAgents) ?? []
+    allowExtraAgents = try container.decodeIfPresent(Bool.self, forKey: .allowExtraAgents) ?? false
     runtimeProcessesMinCount =
       try container.decodeIfPresent(Int.self, forKey: .runtimeProcessesMinCount) ?? 0
     evidenceMinCount = try container.decodeIfPresent(Int.self, forKey: .evidenceMinCount) ?? 0
+    exactCounts =
+      try container.decodeIfPresent(RuntimeBenchExactCounts.self, forKey: .exactCounts)
     contextFiles = try container.decodeIfPresent([String].self, forKey: .contextFiles) ?? []
     memoryAssets = try container.decodeIfPresent([String].self, forKey: .memoryAssets) ?? []
     permissionStates =
@@ -437,15 +611,83 @@ private struct RuntimeBenchExpected: Decodable {
       try container.decodeIfPresent([String].self, forKey: .requiredEventKinds) ?? []
     requiredEvidenceSummaries =
       try container.decodeIfPresent([String].self, forKey: .requiredEvidenceSummaries) ?? []
+    runtimeProcesses =
+      try container.decodeIfPresent([ExpectedRuntimeProcess].self, forKey: .runtimeProcesses) ?? []
+    requiredEvidence =
+      try container.decodeIfPresent([ExpectedRuntimeEvidence].self, forKey: .requiredEvidence) ?? []
+    requireLinkedEvidence =
+      try container.decodeIfPresent(Bool.self, forKey: .requireLinkedEvidence) ?? false
     knownGaps =
       try container.decodeIfPresent([ExpectedRuntimeGap].self, forKey: .knownGaps) ?? []
   }
+}
+
+private struct RuntimeBenchExactCounts: Decodable {
+  var agents: Int?
+  var runtimeProcesses: Int?
+  var evidence: Int?
+  var contextFiles: Int?
+  var memoryAssets: Int?
+  var permissionStates: Int?
 }
 
 private struct ExpectedRuntimeAgent: Decodable {
   var normalizedName: String
   var minConfidence: Int?
   var runtimeStatus: String?
+}
+
+private struct ExpectedRuntimeProcess: Decodable {
+  var agent: String?
+  var processName: String?
+  var minScore: Int?
+  var providers: [String] = []
+  var workspaceSuffix: String?
+
+  private enum CodingKeys: String, CodingKey {
+    case agent
+    case processName
+    case minScore
+    case providers
+    case workspaceSuffix
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    agent = try container.decodeIfPresent(String.self, forKey: .agent)
+    processName = try container.decodeIfPresent(String.self, forKey: .processName)
+    minScore = try container.decodeIfPresent(Int.self, forKey: .minScore)
+    providers = try container.decodeIfPresent([String].self, forKey: .providers) ?? []
+    workspaceSuffix = try container.decodeIfPresent(String.self, forKey: .workspaceSuffix)
+  }
+
+  func describe() -> String {
+    [
+      agent.map { "agent=\($0)" },
+      processName.map { "processName=\($0)" },
+      minScore.map { "minScore=\($0)" },
+    ].compactMap { $0 }.joined(separator: " ")
+  }
+}
+
+private struct ExpectedRuntimeEvidence: Decodable {
+  var agent: String?
+  var type: String?
+  var source: String?
+  var processId: Int32?
+  var pathSuffix: String?
+  var summaryContains: String?
+
+  func describe() -> String {
+    [
+      agent.map { "agent=\($0)" },
+      type.map { "type=\($0)" },
+      source.map { "source=\($0)" },
+      processId.map { "processId=\($0)" },
+      pathSuffix.map { "pathSuffix=\($0)" },
+      summaryContains.map { "summaryContains=\($0)" },
+    ].compactMap { $0 }.joined(separator: " ")
+  }
 }
 
 private struct ExpectedPermissionState: Decodable {

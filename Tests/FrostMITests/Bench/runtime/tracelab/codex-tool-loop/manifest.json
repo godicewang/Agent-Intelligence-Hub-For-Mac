@@ -15,8 +15,31 @@
         "runtimeStatus": "running"
       }
     ],
+    "absentAgents": [
+      "runtime-codex-4101"
+    ],
+    "allowExtraAgents": false,
     "runtimeProcessesMinCount": 1,
     "evidenceMinCount": 5,
+    "exactCounts": {
+      "agents": 1,
+      "runtimeProcesses": 1,
+      "evidence": 6,
+      "contextFiles": 1,
+      "memoryAssets": 1,
+      "permissionStates": 0
+    },
+    "runtimeProcesses": [
+      {
+        "agent": "codex-cli",
+        "processName": "codex",
+        "minScore": 90,
+        "providers": [
+          "OpenAI"
+        ],
+        "workspaceSuffix": "project"
+      }
+    ],
     "contextFiles": [
       "project/AGENTS.md"
     ],
@@ -31,6 +54,34 @@
       "LLM request observed",
       "Tool call observed"
     ],
+    "requiredEvidence": [
+      {
+        "agent": "codex-cli",
+        "type": "process",
+        "source": "codex-cli",
+        "processId": 4101,
+        "summaryContains": "Known process fingerprint matched"
+      },
+      {
+        "agent": "codex-cli",
+        "type": "behavior",
+        "processId": 4101,
+        "summaryContains": "LLM request observed"
+      },
+      {
+        "agent": "codex-cli",
+        "type": "behavior",
+        "processId": 4101,
+        "summaryContains": "Tool call observed"
+      },
+      {
+        "agent": "codex-cli",
+        "type": "memoryFile",
+        "processId": 4101,
+        "pathSuffix": "project/.codex/session.jsonl"
+      }
+    ],
+    "requireLinkedEvidence": true,
     "knownGaps": [
       {
         "capability": "session_graph_edges",

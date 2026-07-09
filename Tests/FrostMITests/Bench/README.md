@@ -44,6 +44,27 @@ Scripts/run_bench_tests.sh
 
 The full bench regenerates fingerprint-derived fixtures, runs discovery self-tests, runs the cold-start Agent bench in `--strict` mode, and verifies packaged app resource loading.
 
+## Evaluation Meaning
+
+The static bench has strong signal for cold-start inventory quality because it combines positive labels, negative labels, and strict audit checks:
+
+- Expected labels validate recall for Agents, MCP servers, Skills, Context files, Memory assets, and permission evidence.
+- `absentMCPServers` validates malformed or unrelated config false-positive control.
+- `--strict` validates precision guards: extra assets, duplicate candidates, missing owners, and path-implied owner mismatches fail the run.
+
+The dynamic runtime bench is intentionally smaller, but stricter per fixture. It validates:
+
+- exact asset counts for the runtime fixture,
+- no unexpected Agent candidates unless explicitly allowed,
+- no duplicate Agents, runtime PIDs, Context paths, or Memory paths,
+- runtime process attribution back to the expected Agent,
+- minimum runtime confidence score,
+- observed LLM provider and workspace attribution,
+- required evidence type, source, process id, path suffix, and summary content,
+- evidence and runtime process links back to an Agent.
+
+This means the runtime bench now checks both coverage and precision: "did FrostMI see the runtime behavior" and "did it attribute that behavior to the right Agent without inventing extra assets."
+
 ## Runtime Sensing Commands
 
 Use the runtime bench when changing process attribution, runtime observation, file-event handling, Agent Analysis aggregation, or dynamic safety evidence:

@@ -15,8 +15,32 @@
         "runtimeStatus": "running"
       }
     ],
+    "absentAgents": [
+      "claude-desktop",
+      "runtime-claude-5101"
+    ],
+    "allowExtraAgents": false,
     "runtimeProcessesMinCount": 1,
     "evidenceMinCount": 5,
+    "exactCounts": {
+      "agents": 1,
+      "runtimeProcesses": 1,
+      "evidence": 6,
+      "contextFiles": 1,
+      "memoryAssets": 0,
+      "permissionStates": 0
+    },
+    "runtimeProcesses": [
+      {
+        "agent": "claude-code",
+        "processName": "claude",
+        "minScore": 90,
+        "providers": [
+          "Anthropic"
+        ],
+        "workspaceSuffix": "project"
+      }
+    ],
     "contextFiles": [
       "project/CLAUDE.md"
     ],
@@ -28,6 +52,28 @@
       "Untrusted tool result observed",
       "Network destination observed"
     ],
+    "requiredEvidence": [
+      {
+        "agent": "claude-code",
+        "type": "process",
+        "source": "claude-code",
+        "processId": 5101,
+        "summaryContains": "Known process fingerprint matched"
+      },
+      {
+        "agent": "claude-code",
+        "type": "keyword",
+        "processId": 5101,
+        "summaryContains": "Untrusted tool result observed"
+      },
+      {
+        "agent": "claude-code",
+        "type": "behavior",
+        "processId": 5101,
+        "summaryContains": "Network destination observed"
+      }
+    ],
+    "requireLinkedEvidence": true,
     "knownGaps": [
       {
         "capability": "taint_propagation",

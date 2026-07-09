@@ -15,8 +15,32 @@
         "runtimeStatus": "running"
       }
     ],
+    "absentAgents": [
+      "cline-roocode",
+      "runtime-cursor-6101"
+    ],
+    "allowExtraAgents": false,
     "runtimeProcessesMinCount": 1,
     "evidenceMinCount": 3,
+    "exactCounts": {
+      "agents": 1,
+      "runtimeProcesses": 1,
+      "evidence": 3,
+      "contextFiles": 1,
+      "memoryAssets": 0,
+      "permissionStates": 1
+    },
+    "runtimeProcesses": [
+      {
+        "agent": "cursor",
+        "processName": "Cursor",
+        "minScore": 80,
+        "providers": [
+          "OpenAI"
+        ],
+        "workspaceSuffix": "project"
+      }
+    ],
     "contextFiles": [
       "project/.cursor/rules/runtime.mdc"
     ],
@@ -34,6 +58,28 @@
     "requiredEvidenceSummaries": [
       "Network destination observed"
     ],
+    "requiredEvidence": [
+      {
+        "agent": "cursor",
+        "type": "process",
+        "source": "cursor",
+        "processId": 6101,
+        "summaryContains": "Known process fingerprint matched"
+      },
+      {
+        "agent": "cursor",
+        "type": "contextFile",
+        "processId": 6101,
+        "pathSuffix": "project/.cursor/rules/runtime.mdc"
+      },
+      {
+        "agent": "cursor",
+        "type": "behavior",
+        "processId": 6101,
+        "summaryContains": "Network destination observed"
+      }
+    ],
+    "requireLinkedEvidence": true,
     "knownGaps": [
       {
         "capability": "endpoint_security_auth_events",
