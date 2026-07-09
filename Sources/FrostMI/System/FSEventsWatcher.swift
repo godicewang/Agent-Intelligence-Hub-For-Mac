@@ -35,12 +35,17 @@ final class FSEventsWatcher {
   private var stream: FSEventStreamRef?
   private let queue = DispatchQueue(label: "frostadr.fsevents")
   private let callback: ([FSEventsChange]) -> Void
+  private var targetPaths: [String] = []
 
   init(callback: @escaping ([FSEventsChange]) -> Void) {
     self.callback = callback
   }
 
-  func start(paths: [URL], latency: TimeInterval = 1.5) -> DiscoveryPermissionState {
+  func start(
+    paths: [URL],
+    latency: TimeInterval = 1.5,
+    useRootFallback: Bool = false
+  ) -> DiscoveryPermissionState {
     stop()
     let existingPaths = paths.map(\.path).filter { FileManager.default.fileExists(atPath: $0) }
     guard !existingPaths.isEmpty else {
@@ -52,6 +57,12 @@ final class FSEventsWatcher {
         checkedAt: Date()
       )
     }
+    targetPaths = existingPaths.flatMap { path in
+      let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
+      return [standardized, normalizedDataVolumePath(standardized)]
+    }
+      .uniqueSorted()
+    let streamPaths = useRootFallback ? ["/"] : existingPaths
 
     let retainedSelf = Unmanaged.passUnretained(self).toOpaque()
     var context = FSEventStreamContext(
@@ -76,10 +87,16 @@ final class FSEventsWatcher {
             observedAt: now
           )
         }
-        watcher.callback(changes)
+        let relevantChanges = watcher.relevantChanges(changes)
+        if ProcessInfo.processInfo.environment["FROSTMI_FSEVENTS_DEBUG"] == "1" {
+          let rawPaths = changes.map(\.path.path).joined(separator: ", ")
+          let relevantPaths = relevantChanges.map(\.path.path).joined(separator: ", ")
+          print("FSEvents debug raw=[\(rawPaths)] relevant=[\(relevantPaths)]")
+        }
+        watcher.callback(relevantChanges)
       },
       &context,
-      existingPaths as CFArray,
+      streamPaths as CFArray,
       FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
       latency,
       FSEventStreamCreateFlags(
@@ -114,7 +131,10 @@ final class FSEventsWatcher {
       id: UUID(),
       capability: .fileSystemEvents,
       status: .available,
-      message: "FSEvents watcher started for \(existingPaths.count) paths.",
+      message:
+        useRootFallback
+        ? "FSEvents watcher started in root-filter mode for \(existingPaths.count) target paths."
+        : "FSEvents watcher started for \(existingPaths.count) paths.",
       checkedAt: Date()
     )
   }
@@ -125,9 +145,36 @@ final class FSEventsWatcher {
     FSEventStreamInvalidate(stream)
     FSEventStreamRelease(stream)
     self.stream = nil
+    targetPaths = []
+  }
+
+  func flushSync() {
+    guard let stream else { return }
+    FSEventStreamFlushSync(stream)
   }
 
   deinit {
     stop()
+  }
+
+  private func relevantChanges(_ changes: [FSEventsChange]) -> [FSEventsChange] {
+    changes.filter { change in
+      guard change.flags & UInt32(kFSEventStreamEventFlagHistoryDone) == 0 else {
+        return false
+      }
+      guard !targetPaths.isEmpty else { return true }
+      let path = normalizedDataVolumePath(change.path.standardizedFileURL.path)
+      return targetPaths.contains { target in
+        path == target
+          || path.hasPrefix(target + "/")
+          || (target.hasPrefix(path.hasSuffix("/") ? path : path + "/") && path != "/")
+      }
+    }
+  }
+
+  private func normalizedDataVolumePath(_ path: String) -> String {
+    let dataPrefix = "/System/Volumes/Data"
+    guard path.hasPrefix(dataPrefix + "/") else { return path }
+    return String(path.dropFirst(dataPrefix.count))
   }
 }

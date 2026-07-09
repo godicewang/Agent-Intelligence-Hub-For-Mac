@@ -34,7 +34,7 @@ final class RuntimeAgentObserver: @unchecked Sendable {
     guard config.enableRuntimeObserver else { return [] }
     var states: [DiscoveryPermissionState] = []
 
-    if config.enableFSEventsWatcher && !config.scanRoots.isEmpty {
+    if config.enableFSEventsWatcher && !runtimeWatchRoots().isEmpty {
       states.append(startFileSystemWatcher(onUpdate: onUpdate))
     }
     refreshProcesses(onUpdate: onUpdate)
@@ -47,9 +47,36 @@ final class RuntimeAgentObserver: @unchecked Sendable {
   {
     runtimeWatcher?.stop()
     let watcher = makeFileSystemWatcher(onUpdate: onUpdate)
-    let state = watcher.start(paths: config.scanRoots)
+    let state = watcher.start(paths: runtimeWatchRoots(), useRootFallback: true)
     runtimeWatcher = watcher
     return state
+  }
+
+  private func runtimeWatchRoots() -> [URL] {
+    let home = config.homeDirectory
+    let applicationSupport =
+      (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      ?? home.appendingPathComponent("Library/Application Support", isDirectory: true))
+    let agentRuntimeRoots = [
+      home.appendingPathComponent(".codex", isDirectory: true),
+      home.appendingPathComponent(".claude", isDirectory: true),
+      home.appendingPathComponent(".gemini", isDirectory: true),
+      home.appendingPathComponent(".cursor", isDirectory: true),
+      home.appendingPathComponent(".continue", isDirectory: true),
+      home.appendingPathComponent(".aider", isDirectory: true),
+      applicationSupport.appendingPathComponent("Codex", isDirectory: true),
+      applicationSupport.appendingPathComponent("Claude", isDirectory: true),
+      applicationSupport.appendingPathComponent("Cursor", isDirectory: true),
+      applicationSupport.appendingPathComponent("Windsurf", isDirectory: true),
+      applicationSupport.appendingPathComponent("Code", isDirectory: true),
+      applicationSupport.appendingPathComponent("Code - Insiders", isDirectory: true),
+    ]
+    return (config.scanRoots + agentRuntimeRoots)
+      .filter {
+        DiscoveryUtilities.directoryExists($0) && config.allowsAutomaticAccess(to: $0)
+      }
+      .map { $0.standardizedFileURL }
+      .uniqueSorted()
   }
 
   private func makeFileSystemWatcher(

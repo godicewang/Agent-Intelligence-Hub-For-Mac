@@ -91,11 +91,13 @@ Focused runtime foundation checks:
 swift run FrostMI --runtime-event-store-self-test
 swift run FrostMI --mcp-wrapper-self-test
 swift run FrostMI --fsevents-self-test
+swift run FrostMI --codex-runtime-capture-self-test
 ```
 
 - `--runtime-event-store-self-test` validates SQLite runtime event persistence and session graph edge reconstruction.
 - `--mcp-wrapper-self-test` launches a real local MCP stdio wrapper around a fixture JSON-RPC server, forwards stdin/stdout unchanged, and validates captured `tools/list`, `tools/call`, and result events.
-- `--fsevents-self-test` starts a real macOS FSEvents stream and writes to a temporary local path. It is strict by default; `Scripts/run_bench_tests.sh` uses `--allow-degraded` so environments that start FSEvents but do not deliver callbacks are reported as degraded rather than replaced with fake events.
+- `--fsevents-self-test` starts a real macOS FSEvents stream in root-filter mode and validates delivery from FrostMI's application-support path into the runtime store.
+- `--codex-runtime-capture-self-test` uses the currently running Codex.app process tree as live ground truth and validates attribution for main, helper, service, renderer, app-server, node_repl, and computer-use processes. Run it on machines where Codex.app is active.
 
 Current target mode is expected to keep entitlement-gated gaps open until FrostMI has real Endpoint Security and Network Extension capture:
 

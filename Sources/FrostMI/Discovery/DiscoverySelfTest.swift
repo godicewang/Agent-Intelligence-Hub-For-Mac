@@ -527,19 +527,76 @@ enum DiscoverySelfTest {
       ).inspect(
         observations: [
           ProcessObservation(
-            pid: 4243,
+            pid: 4240,
             ppid: 1,
+            command: "/Applications/Codex.app/Contents/MacOS/Codex",
+            arguments: "/Applications/Codex.app/Contents/MacOS/Codex"),
+          ProcessObservation(
+            pid: 4241,
+            ppid: 4240,
+            command:
+              "/Applications/Codex.app/Contents/Frameworks/Codex Framework.framework/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+            arguments:
+              "/Applications/Codex.app/Contents/Frameworks/Codex Framework.framework/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service) --type=utility"
+          ),
+          ProcessObservation(
+            pid: 4242,
+            ppid: 4240,
+            command:
+              "/Applications/Codex.app/Contents/Frameworks/Codex Framework.framework/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+            arguments:
+              "/Applications/Codex.app/Contents/Frameworks/Codex Framework.framework/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer) --type=renderer"
+          ),
+          ProcessObservation(
+            pid: 4243,
+            ppid: 4240,
             command: "/Applications/Co",
-            arguments: "/Applications/Codex.app/Contents/Resources/codex app-server")
+            arguments: "/Applications/Codex.app/Contents/Resources/codex app-server"),
+          ProcessObservation(
+            pid: 4244,
+            ppid: 4243,
+            command: "/Applications/Codex.app/Contents/Resources/cua_node/bin/node_repl",
+            arguments: "/Applications/Codex.app/Contents/Resources/cua_node/bin/node_repl"),
+          ProcessObservation(
+            pid: 4245,
+            ppid: 4240,
+            command:
+              "/Users/fixture/.codex/computer-use/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService",
+            arguments:
+              "/Users/fixture/.codex/computer-use/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService"
+          ),
+          ProcessObservation(
+            pid: 4246,
+            ppid: 4243,
+            command:
+              "./Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
+            arguments:
+              "./Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient mcp"
+          ),
         ])
-      return result.agents.contains {
-        $0.normalizedName == "codex-app" && $0.processIds.contains(4243)
+      let codexAppPids = Set(
+        result.agents
+          .filter { $0.normalizedName == "codex-app" }
+          .flatMap(\.processIds)
+      )
+      let codexRuntimePids = Set(
+        result.runtimeProcesses
+          .filter { runtime in
+            guard let sourceAgentId = runtime.sourceAgentId else { return false }
+            return result.agents.contains {
+              $0.id == sourceAgentId && $0.normalizedName == "codex-app"
+            }
+          }
+          .map(\.pid)
+      )
+      return [4240, 4241, 4242, 4243, 4244, 4245, 4246].allSatisfy {
+        codexAppPids.contains($0) || codexRuntimePids.contains($0)
       }
         && !result.agents.contains {
           $0.normalizedName == "codex-cli" && $0.processIds.contains(4243)
         }
         && result.runtimeProcesses.contains {
-          $0.pid == 4243 && $0.sourceAgentId != nil
+          $0.pid == 4244 && $0.sourceAgentId != nil && !$0.parentChain.isEmpty
         }
     }
 

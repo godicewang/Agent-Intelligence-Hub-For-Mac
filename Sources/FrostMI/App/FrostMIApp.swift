@@ -21,6 +21,9 @@ struct FrostMIApp: App {
     if CommandLine.arguments.contains("--mcp-wrapper-self-test") {
       Foundation.exit(MCPStdioWrapper.runSelfTest())
     }
+    if CommandLine.arguments.contains("--codex-runtime-capture-self-test") {
+      Foundation.exit(CodexRuntimeCaptureSelfTest.run())
+    }
     if CommandLine.arguments.contains("--mcp-stdio-wrapper") {
       Foundation.exit(MCPStdioWrapper.run())
     }

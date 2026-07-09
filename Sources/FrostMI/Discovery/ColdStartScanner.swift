@@ -326,7 +326,9 @@ extension DiscoveryScanResult {
     memories = mergedMemories(
       (memories + other.memories).map { remapOwner($0, idMap: idMap) },
       agentsById: agentsById)
-    runtimeProcesses = mergeByKey(runtimeProcesses + other.runtimeProcesses) {
+    runtimeProcesses = mergeByKey(
+      (runtimeProcesses + other.runtimeProcesses).map { remapOwner($0, idMap: idMap) }
+    ) {
       String($0.pid)
     }
     evidence = mergeByKey((evidence + other.evidence).map { remapEvidence($0, idMap: idMap) }) {
@@ -402,7 +404,8 @@ private func mergedSkills(
       assetPath: incoming.path, agentsById: agentsById)
     merged.hasScripts = existing.hasScripts || incoming.hasScripts
     merged.hasExternalURLs = existing.hasExternalURLs || incoming.hasExternalURLs
-    merged.hasInstallInstructions = existing.hasInstallInstructions || incoming.hasInstallInstructions
+    merged.hasInstallInstructions =
+      existing.hasInstallInstructions || incoming.hasInstallInstructions
     merged.hasSensitivePermissionHints =
       existing.hasSensitivePermissionHints || incoming.hasSensitivePermissionHints
     return merged
@@ -458,6 +461,12 @@ private func remapOwner(_ value: SkillAsset, idMap: [UUID: UUID]) -> SkillAsset 
 }
 
 private func remapOwner(_ value: MemoryAsset, idMap: [UUID: UUID]) -> MemoryAsset {
+  var copy = value
+  copy.sourceAgentId = value.sourceAgentId.flatMap { idMap[$0] ?? $0 }
+  return copy
+}
+
+private func remapOwner(_ value: RuntimeProcessAsset, idMap: [UUID: UUID]) -> RuntimeProcessAsset {
   var copy = value
   copy.sourceAgentId = value.sourceAgentId.flatMap { idMap[$0] ?? $0 }
   return copy

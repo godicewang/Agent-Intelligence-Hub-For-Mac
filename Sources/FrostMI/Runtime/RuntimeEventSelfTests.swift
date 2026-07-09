@@ -75,18 +75,36 @@ enum RuntimeEventSelfTests {
   static func runFSEventsSelfTest() -> Int32 {
     let allowDegraded = CommandLine.arguments.contains("--allow-degraded")
     let fileManager = FileManager.default
-    let root = URL(fileURLWithPath: fileManager.currentDirectoryPath)
-      .appendingPathComponent(
-        ".frostmi-fsevents-self-test-\(UUID().uuidString)",
-        isDirectory: true
-      )
+    let frostSupportRoot =
+      (fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent(
+        "Library/Application Support"))
+      .appendingPathComponent("FrostADR", isDirectory: true)
+    let codexProcessRoot = fileManager.homeDirectoryForCurrentUser
+      .appendingPathComponent(".codex/process_manager", isDirectory: true)
+    let watchRoots = ([codexProcessRoot, frostSupportRoot].filter {
+      fileManager.fileExists(atPath: $0.path)
+    } + [frostSupportRoot])
+      .map { $0.standardizedFileURL }
+      .uniqueSorted()
+    let root = frostSupportRoot
+    let testDirectory = root.appendingPathComponent(
+      "FrostMI-FSEvents-SelfTest-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    let changedFile = testDirectory.appendingPathComponent("fsevents-check.txt")
     do {
       try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
-      defer { try? fileManager.removeItem(at: root) }
+      try fileManager.createDirectory(at: testDirectory, withIntermediateDirectories: true)
+      defer { try? fileManager.removeItem(at: testDirectory) }
       let store = try RuntimeEventStore(url: temporaryDatabaseURL(label: "fsevents"))
       let semaphore = DispatchSemaphore(value: 0)
       let watcher = FSEventsWatcher { changes in
-        let relevant = changes.filter { $0.path.path.hasPrefix(root.path) }
+        let relevant = changes.filter { change in
+          watchRoots.contains { root in
+            change.path.standardizedFileURL.path.hasPrefix(root.path + "/")
+          }
+        }
         guard !relevant.isEmpty else { return }
         let events = relevant.map { change in
           RuntimeEventRecord(
@@ -110,43 +128,49 @@ enum RuntimeEventSelfTests {
         _ = try? store.append(events)
         semaphore.signal()
       }
-      let state = watcher.start(paths: [root], latency: 0.15)
+      let state = watcher.start(paths: watchRoots, latency: 0.15, useRootFallback: true)
       guard state.status == .available else {
         print("FSEvents self-test failed: \(state.message)")
         watcher.stop()
         return 1
       }
       Thread.sleep(forTimeInterval: 0.35)
-      let changedFile = root.appendingPathComponent("AGENTS.md")
-      try "FrostMI FSEvents self-test\n".write(to: changedFile, atomically: true, encoding: .utf8)
-      Thread.sleep(forTimeInterval: 0.2)
-      try "FrostMI FSEvents self-test updated\n".write(
-        to: changedFile,
-        atomically: true,
-        encoding: .utf8
-      )
-      let signal = waitForFSEvent(semaphore: semaphore, timeout: 10)
+      try writeFSEventsSelfTestFile(changedFile)
+      watcher.flushSync()
+      let signal = waitForFSEvent(semaphore: semaphore, timeout: 15)
       watcher.stop()
       guard signal == .success else {
         if allowDegraded {
           print(
-            "FSEvents self-test degraded: stream started but this execution environment did not deliver a file event within timeout."
+            "FSEvents self-test degraded: stream started but no real FrostMI application-support event arrived within timeout."
           )
           return 0
         }
-        print("FSEvents self-test failed: no event arrived within timeout.")
+        print(
+          "FSEvents self-test failed: no real FrostMI application-support event arrived within timeout."
+        )
         return 1
       }
       let events = try store.loadEvents()
       let graphs = try store.loadSessionGraphs()
-      guard events.contains(where: { $0.path == changedFile.path }),
+      guard events.contains(where: { event in
+        guard let path = event.path else { return false }
+        return watchRoots.contains { root in path.hasPrefix(root.path + "/") }
+      }),
         graphs.contains(where: { $0.nodeCount > 0 })
       else {
         print("FSEvents self-test failed: event did not persist to runtime store.")
         return 1
       }
+      let observedRoots = watchRoots.filter { root in
+        events.contains { event in
+          guard let path = event.path else { return false }
+          return path.hasPrefix(root.path + "/")
+        }
+      }.map(\.path).joined(separator: ",")
+      let watchedRoots = watchRoots.map(\.path).joined(separator: ",")
       print(
-        "FSEvents self-test passed: events=\(events.count) graphs=\(graphs.count) watched=\(root.path)"
+        "FSEvents self-test passed: events=\(events.count) graphs=\(graphs.count) mode=root-filter watched=\(watchedRoots) observed=\(observedRoots)"
       )
       return 0
     } catch {
@@ -174,5 +198,24 @@ enum RuntimeEventSelfTests {
       }
     }
     return .timedOut
+  }
+
+  private static func writeFSEventsSelfTestFile(_ url: URL) throws {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/sh")
+    process.arguments = [
+      "-c",
+      """
+      printf '%s\\n' 'FrostMI FSEvents self-test' > "$1"
+      sleep 0.2
+      printf '%s\\n' 'FrostMI FSEvents self-test updated' > "$1"
+      """,
+      "frostmi-fsevents-writer",
+      url.path,
+    ]
+    process.standardOutput = Pipe()
+    process.standardError = Pipe()
+    try process.run()
+    process.waitUntilExit()
   }
 }

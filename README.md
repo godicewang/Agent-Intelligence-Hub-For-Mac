@@ -66,7 +66,7 @@ Other product directions are intentionally not exposed as current UI modules unt
 - Agent Command Center with a Static Profile Rebuild refresh action and a Runtime Observation switch.
 - Agent Analysis separates running and inactive agents, sorted by recent observation and activity signals.
 - Real local Agent Discovery in Agent Sensing, including separate Codex CLI / Codex App recognition and Windsurf static discovery coverage.
-- Lightweight runtime monitoring with `ps` process snapshots, `NSWorkspace.runningApplications` desktop app attribution, FSEvents status, batched filesystem-change handling, and manual/periodic refresh.
+- Lightweight runtime monitoring with `ps` process snapshots, `NSWorkspace.runningApplications` desktop app attribution, root-filtered FSEvents, batched filesystem-change handling, and manual/periodic refresh.
 - Runtime event store backed by local SQLite records for observable process, file, LLM/tool, MCP, network, memory, and permission events.
 - Session graph reconstruction from persisted runtime events, preserving ordered event nodes and `next_observed` graph edges per session.
 - MCP stdio wrapper CLI that forwards real MCP stdin/stdout unchanged while capturing `tools/list`, `tools/call`, tool results, and JSON-RPC errors into the runtime event store.
@@ -159,10 +159,11 @@ Additional focused runtime checks are included in the full bench:
 ```bash
 swift run FrostMI --runtime-event-store-self-test
 swift run FrostMI --mcp-wrapper-self-test
-swift run FrostMI --fsevents-self-test --allow-degraded
+swift run FrostMI --fsevents-self-test
+swift run FrostMI --codex-runtime-capture-self-test
 ```
 
-`--fsevents-self-test` is strict by default. The full bench uses `--allow-degraded` because some command-runner environments can start an FSEvents stream but fail to deliver callbacks; that state is reported explicitly and is not replaced with fake telemetry.
+`--fsevents-self-test` is strict by default and validates real macOS FSEvents delivery through FrostMI's root-filter mode. `--codex-runtime-capture-self-test` uses the currently running Codex.app process tree as a live ground-truth sample and fails if any detected Codex main/helper/service/renderer/app-server/node_repl/computer-use process is not attributed to `codex-app`.
 
 For target-mode evaluation that fails until known runtime gaps are implemented:
 

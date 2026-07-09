@@ -39,7 +39,8 @@ final class ProcessInspector {
     for row in rows {
       guard !isExpired(deadline) else { break }
       let parentChain = parentChain(for: row, rowsByPID: rowsByPID)
-      let knownResult = knownProcessResult(for: row, parentChain: parentChain)
+      let knownResult = knownProcessResult(
+        for: row, parentChain: parentChain, rowsByPID: rowsByPID)
       result.merge(knownResult)
       guard knownResult.runtimeProcesses.isEmpty else { continue }
 
@@ -118,24 +119,37 @@ final class ProcessInspector {
     return result
   }
 
-  private func knownProcessResult(for row: ProcessObservation, parentChain: [String])
+  private func knownProcessResult(
+    for row: ProcessObservation,
+    parentChain: [String],
+    rowsByPID: [Int32: ProcessObservation]
+  )
     -> DiscoveryScanResult
   {
     var result = DiscoveryScanResult()
     guard let registry else { return result }
 
     let processName = observedProcessName(for: row)
-    let pathScopedMatches = registry.fingerprints.filter {
-      $0.confidenceWeights.process >= 20 && processBelongsToInstallPath(row, fingerprint: $0)
+    let pathScopedMatches = registry.fingerprints.compactMap { fingerprint -> ProcessMatch? in
+      guard fingerprint.confidenceWeights.process >= 20 else { return nil }
+      let scope = installScope(for: row, fingerprint: fingerprint, rowsByPID: rowsByPID)
+      guard scope != .none else { return nil }
+      return ProcessMatch(fingerprint: fingerprint, installScope: scope)
     }
-    let nameMatches = registry.fingerprints.filter {
-      $0.confidenceWeights.process >= 20 && processNameMatches(processName, fingerprint: $0)
+    let nameMatches = registry.fingerprints.compactMap { fingerprint -> ProcessMatch? in
+      guard fingerprint.confidenceWeights.process >= 20,
+        processNameMatches(processName, fingerprint: fingerprint)
+      else { return nil }
+      return ProcessMatch(fingerprint: fingerprint, installScope: .none)
     }
-    let matchingFingerprints = pathScopedMatches.isEmpty ? nameMatches : pathScopedMatches
+    let matchingFingerprints = preferredProcessMatches(
+      pathScopedMatches.isEmpty ? nameMatches : pathScopedMatches)
 
-    for fingerprint in matchingFingerprints {
+    for match in matchingFingerprints {
+      let fingerprint = match.fingerprint
       let runtimeContext = knownRuntimeContext(for: row)
-      let confidence = (fingerprint.confidenceWeights.process + runtimeContext.bonus)
+      let installBonus = installConfidenceBonus(for: match)
+      let confidence = (fingerprint.confidenceWeights.process + runtimeContext.bonus + installBonus)
         .clampedConfidence
       let agent = AgentAsset(
         displayName: fingerprint.displayName,
@@ -177,8 +191,9 @@ final class ProcessInspector {
           source: fingerprint.normalizedName,
           processId: row.pid,
           confidenceDelta: confidence,
-          summary: (["Known process fingerprint matched"] + runtimeContext.summaries).joined(
-            separator: "; "),
+          summary: (["Known process fingerprint matched"]
+            + installEvidenceSummaries(for: match)
+            + runtimeContext.summaries).joined(separator: "; "),
           rawKey: processName
         ))
     }
@@ -263,6 +278,60 @@ final class ProcessInspector {
       }
   }
 
+  private func installScope(
+    for row: ProcessObservation,
+    fingerprint: AgentFingerprint,
+    rowsByPID: [Int32: ProcessObservation]
+  ) -> ProcessInstallScope {
+    if processBelongsToInstallPath(row, fingerprint: fingerprint) {
+      return .direct
+    }
+    var currentParent = row.ppid
+    var seen: Set<Int32> = [row.pid]
+    while currentParent > 0, !seen.contains(currentParent), seen.count < 16 {
+      seen.insert(currentParent)
+      guard let parent = rowsByPID[currentParent] else { break }
+      if processBelongsToInstallPath(parent, fingerprint: fingerprint) {
+        return .ancestor
+      }
+      currentParent = parent.ppid
+    }
+    return .none
+  }
+
+  private func preferredProcessMatches(_ matches: [ProcessMatch]) -> [ProcessMatch] {
+    let appScoped = matches.filter { match in
+      match.installScope != .none
+        && match.fingerprint.installPaths.contains { $0.hasSuffix(".app") }
+    }
+    if !appScoped.isEmpty {
+      return appScoped
+    }
+    return matches
+  }
+
+  private func installConfidenceBonus(for match: ProcessMatch) -> Int {
+    switch match.installScope {
+    case .direct:
+      min(60, match.fingerprint.confidenceWeights.installPath)
+    case .ancestor:
+      min(50, match.fingerprint.confidenceWeights.installPath)
+    case .none:
+      0
+    }
+  }
+
+  private func installEvidenceSummaries(for match: ProcessMatch) -> [String] {
+    switch match.installScope {
+    case .direct:
+      ["Runtime executable is inside known install path"]
+    case .ancestor:
+      ["Runtime process is a child of a known app process"]
+    case .none:
+      []
+    }
+  }
+
   private func runtimeProcessRows(timeout: TimeInterval) -> [ProcessObservation] {
     let shellRows = processRows(timeout: timeout)
     let appRows = runningApplicationRows()
@@ -335,7 +404,7 @@ final class ProcessInspector {
       return []
     }
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
-    guard let output = String(data: data, encoding: .utf8) else { return [] }
+    let output = String(decoding: data, as: UTF8.self)
     return output.components(separatedBy: .newlines).compactMap(ProcessObservation.init(line:))
   }
 
@@ -452,4 +521,15 @@ struct ProcessObservation: Hashable {
     bundlePath = nil
     localizedName = nil
   }
+}
+
+private struct ProcessMatch {
+  var fingerprint: AgentFingerprint
+  var installScope: ProcessInstallScope
+}
+
+private enum ProcessInstallScope {
+  case none
+  case direct
+  case ancestor
 }
