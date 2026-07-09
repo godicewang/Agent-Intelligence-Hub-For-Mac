@@ -102,9 +102,16 @@ final class AgentDiscoveryService: ObservableObject {
     }
   }
 
-  func refreshRuntimeObservation() {
-    runtimeObserver.refreshProcesses { [weak self] snapshot in
-      self?.snapshot = snapshot
+  func refreshRuntimeObservation() async {
+    let runtimeObserver = self.runtimeObserver
+    let snapshot = await withCheckedContinuation { continuation in
+      DispatchQueue.global(qos: .utility).async {
+        continuation.resume(returning: runtimeObserver.refreshProcessesSnapshot())
+      }
+    }
+    if let snapshot {
+      self.snapshot = snapshot
+      lastError = nil
     }
   }
 

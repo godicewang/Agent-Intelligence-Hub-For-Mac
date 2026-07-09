@@ -71,15 +71,15 @@ struct AgentScanView: View {
           path: "FrostMI / Agent Sensing"
         )
 
-        header
         tabSelector
 
         switch selectedTab {
         case .staticScan:
+          header
           staticSummaryGrid(scrollProxy)
           staticContent
         case .runtimeMonitor:
-          runtimeSummaryGrid(scrollProxy)
+          runtimeMonitorDashboard
           runtimeContent
         case .agentAnalysis:
           analysisSummaryGrid(scrollProxy)
@@ -93,14 +93,27 @@ struct AgentScanView: View {
   }
 
   private var tabSelector: some View {
-    FrostCard("Sensing Mode", subtitle: selectedTab.subtitle) {
-      Picker("Sensing Mode", selection: $selectedTab) {
-        ForEach(AgentSensingTab.allCases) { tab in
-          Text(tab.title).tag(tab)
+    FrostCard("Sensing Mode", subtitle: "先选你要看的层级：静态资产、实时运行，或 Agent 总画像。") {
+      VStack(alignment: .leading, spacing: 12) {
+        Picker("Sensing Mode", selection: $selectedTab) {
+          ForEach(AgentSensingTab.allCases) { tab in
+            Text(tab.title).tag(tab)
+          }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: 520)
+
+        HStack(alignment: .top, spacing: 10) {
+          Image(systemName: "info.circle")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(FrostTheme.accent)
+          Text(selectedTab.subtitle)
+            .font(.system(size: 11.5, weight: .medium))
+            .foregroundStyle(FrostTheme.mutedText)
+            .fixedSize(horizontal: false, vertical: true)
         }
       }
-      .pickerStyle(.segmented)
-      .labelsHidden()
     }
   }
 
@@ -335,44 +348,10 @@ struct AgentScanView: View {
     }
   }
 
-  private func runtimeSummaryGrid(_ scrollProxy: ScrollViewProxy) -> some View {
-    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 14) {
-      metric(
-        "Runtime",
-        value: runtimeProcesses.count,
-        icon: "dot.radiowaves.left.and.right",
-        section: .runtimeProcesses,
-        scrollProxy: scrollProxy
-      )
-      metric(
-        "Running Agents",
-        value: agentProfiles.filter(\.isRuntimeActive).count,
-        icon: "play.circle",
-        section: .analysisAgents,
-        scrollProxy: scrollProxy
-      )
-      metric(
-        "Events",
-        value: runtimeEvents.count,
-        icon: "list.bullet.rectangle",
-        section: .runtimeEvents,
-        scrollProxy: scrollProxy
-      )
-      metric(
-        "Sensors",
-        value: viewModel.snapshot.permissionStates.count,
-        icon: "antenna.radiowaves.left.and.right",
-        section: .runtimeSensors,
-        scrollProxy: scrollProxy
-      )
-    }
-  }
-
   @ViewBuilder
   private var runtimeContent: some View {
     FrostDetailLayout(detailWidth: 380) {
       VStack(alignment: .leading, spacing: 18) {
-        runtimeControlSection
         runtimeProcessesSection
           .id(AgentScanSection.runtimeProcesses)
         runtimeEventsSection
@@ -387,71 +366,100 @@ struct AgentScanView: View {
     }
   }
 
-  private var runtimeControlSection: some View {
-    FrostCard("Runtime Monitor", subtitle: "process snapshot + incremental file observation") {
-      HStack(alignment: .top, spacing: 16) {
-        ZStack {
-          RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(FrostTheme.accent.opacity(0.13))
-            .overlay(
-              RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(FrostTheme.accent.opacity(0.28), lineWidth: 1)
-            )
-
-          Image(systemName: "dot.radiowaves.left.and.right")
-            .font(.system(size: 22, weight: .semibold))
-            .foregroundStyle(FrostTheme.accent)
-        }
-        .frame(width: 48, height: 48)
-
-        VStack(alignment: .leading, spacing: 8) {
-          Text(viewModel.isRuntimeMonitoring ? "动态监控已启用" : "动态监控未启用")
-            .font(.system(size: 17, weight: .bold))
-
-          Text(runtimeStatusLine)
-            .font(.system(size: 12))
-            .foregroundStyle(FrostTheme.mutedText)
-            .fixedSize(horizontal: false, vertical: true)
-
-          WrapBadges {
-            StatusBadge(label: "No Fake Telemetry", tone: .healthy)
-            StatusBadge(label: "Process Snapshot", tone: .info)
-            StatusBadge(
-              label: viewModel.configuration.enableFSEventsWatcher ? "FSEvents On" : "FSEvents Off",
-              tone: viewModel.configuration.enableFSEventsWatcher ? .info : .neutral)
-            StatusBadge(
-              label: viewModel.configuration.enableEndpointSecurityMonitor ? "ES On" : "ES Off",
-              tone: viewModel.configuration.enableEndpointSecurityMonitor ? .warning : .neutral)
-          }
-        }
-
-        Spacer()
-
-        HStack(spacing: 10) {
-          if viewModel.isRuntimeRefreshing {
-            ProgressView()
-              .controlSize(.small)
-          }
-
-          Button {
-            viewModel.refreshRuntimeNow()
-          } label: {
-            Label("刷新运行态", systemImage: "arrow.clockwise")
-          }
-          .buttonStyle(.borderedProminent)
-          .tint(FrostTheme.accent)
-          .disabled(viewModel.isRuntimeRefreshing)
-        }
-      }
-    }
-  }
-
   private var runtimeStatusLine: String {
     if let refreshedAt = viewModel.lastRuntimeRefreshedAt {
       return
         "最近刷新：\(refreshedAt.formatted(date: .abbreviated, time: .standard))。当前使用无额外授权的进程快照和已授权工作区 FSEvents，不伪造 Endpoint Security / Network Extension 遥测。"
     }
     return "启动后会自动刷新运行时快照；也可以手动刷新。需要系统级遥测时只显示真实 entitlement 状态。"
+  }
+
+  private var runtimeMonitorDashboard: some View {
+    FrostCard("Runtime Monitor", subtitle: "实时运行态仪表盘") {
+      HStack(alignment: .center, spacing: 18) {
+        RuntimePulseMeter(
+          activeProcessCount: runtimeProcesses.count,
+          activeAgentCount: agentProfiles.filter(\.isRuntimeActive).count,
+          isRefreshing: viewModel.isRuntimeRefreshing
+        )
+        .frame(width: 190, height: 150)
+
+        VStack(alignment: .leading, spacing: 12) {
+          HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(viewModel.isRuntimeMonitoring ? "运行时监控中" : "运行时监控未启用")
+                .font(.system(size: 18, weight: .bold))
+              Text(runtimeStatusLine)
+                .font(.system(size: 12))
+                .foregroundStyle(FrostTheme.mutedText)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+
+            Button {
+              viewModel.refreshRuntimeNow()
+            } label: {
+              Label("刷新", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(FrostTheme.accent)
+            .disabled(viewModel.isRuntimeRefreshing)
+          }
+
+          HStack(spacing: 10) {
+            runtimeSignalTile(
+              title: "运行 Agent",
+              value: "\(agentProfiles.filter(\.isRuntimeActive).count)",
+              detail: "当前有进程证据",
+              tone: .healthy
+            )
+            runtimeSignalTile(
+              title: "运行进程",
+              value: "\(runtimeProcesses.count)",
+              detail: "来自 ps + App 视图",
+              tone: .info
+            )
+            runtimeSignalTile(
+              title: "最近事件",
+              value: "\(runtimeEvents.count)",
+              detail: "已降噪保留",
+              tone: .neutral
+            )
+          }
+        }
+      }
+    }
+  }
+
+  private func runtimeSignalTile(
+    title: String,
+    value: String,
+    detail: String,
+    tone: StatusBadgeTone
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 7) {
+      HStack {
+        Text(title)
+          .font(.system(size: 11, weight: .bold))
+          .foregroundStyle(FrostTheme.mutedText)
+        Spacer()
+        StatusBadge(label: detail, tone: tone)
+      }
+      Text(value)
+        .font(.system(size: 28, weight: .bold))
+        .monospacedDigit()
+    }
+    .padding(12)
+    .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
+    .background(
+      RoundedRectangle(cornerRadius: FrostTheme.compactRadius, style: .continuous)
+        .fill(FrostTheme.moduleWellBackground)
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: FrostTheme.compactRadius, style: .continuous)
+        .stroke(FrostTheme.subtleBorder, lineWidth: 1)
+    )
   }
 
   private var runtimeProcessesSection: some View {
@@ -650,48 +658,121 @@ struct AgentScanView: View {
           message: "完成静态发现或观察到运行中 Agent 后，这里会展示聚合画像。",
           systemImage: "person.crop.rectangle.stack", compact: true)
       } else {
-        tableSurface {
-          tableHeader(["Agent", "Coverage", "Static", "Runtime", "Evidence", "Risk"])
-          ForEach(visibleProfiles) { profile in
-            Button {
-              selectedAgentID = profile.agent.id
-            } label: {
-              VStack(spacing: 0) {
-                HStack(spacing: 0) {
-                  rowText(profile.agent.displayName)
-                  rowText(profile.coverageLabel)
-                  rowText("\(profile.staticAssetCount)")
-                  rowText("\(profile.runtimeProcessCount)")
-                  rowText("\(profile.evidenceCount)")
-                  HStack {
-                    StatusBadge(
-                      label: profile.highestRisk.rawValue, tone: tone(for: profile.highestRisk))
-                    Spacer(minLength: 0)
-                  }
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                  .padding(.horizontal, 10)
-                  .padding(.vertical, 8)
-                }
-                Divider()
-              }
-              .background(
-                selectedAgentID == profile.agent.id ? FrostTheme.accent.opacity(0.09) : Color.clear
-              )
-              .contentShape(Rectangle())
+        VStack(alignment: .leading, spacing: 12) {
+          Text("点击任意 Agent 卡片，在右侧查看它拥有的 MCP、Skill、Context、Memory，以及当前活跃进程。")
+            .font(.system(size: 11.5, weight: .medium))
+            .foregroundStyle(FrostTheme.mutedText)
+            .fixedSize(horizontal: false, vertical: true)
+
+          LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
+            ForEach(visibleProfiles) { profile in
+              agentProfileCard(profile)
             }
-            .buttonStyle(.plain)
-            .pointingHandCursor()
-            .help("查看 Agent 画像")
           }
+
           paginationFooter(total: agentProfiles.count, page: $analysisPage, label: "Agent")
         }
       }
     }
   }
 
+  private func agentProfileCard(_ profile: AgentSensingProfile) -> some View {
+    Button {
+      selectedAgentID = profile.agent.id
+    } label: {
+      VStack(alignment: .leading, spacing: 12) {
+        HStack(alignment: .top, spacing: 10) {
+          ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+              .fill(
+                profile.isRuntimeActive
+                  ? FrostTheme.accent.opacity(0.16) : Color.primary.opacity(0.06)
+              )
+            Image(systemName: profile.isRuntimeActive ? "play.circle.fill" : "pause.circle")
+              .font(.system(size: 18, weight: .semibold))
+              .foregroundStyle(profile.isRuntimeActive ? FrostTheme.accent : FrostTheme.mutedText)
+          }
+          .frame(width: 38, height: 38)
+
+          VStack(alignment: .leading, spacing: 5) {
+            Text(profile.agent.displayName)
+              .font(.system(size: 14, weight: .bold))
+              .lineLimit(2)
+            HStack(spacing: 6) {
+              StatusBadge(
+                label: profile.isRuntimeActive ? "running" : "not running",
+                tone: profile.isRuntimeActive ? .healthy : .neutral)
+              StatusBadge(label: profile.highestRisk.rawValue, tone: tone(for: profile.highestRisk))
+            }
+          }
+
+          Spacer(minLength: 0)
+        }
+
+        HStack(spacing: 8) {
+          miniCount("MCP", profile.mcpCount)
+          miniCount("Skill", profile.skillCount)
+          miniCount("Ctx", profile.contextCount)
+          miniCount("Mem", profile.memoryCount)
+          miniCount("Run", profile.runtimeProcessCount)
+        }
+
+        Text(profile.analysisSummary)
+          .font(.system(size: 10.5))
+          .foregroundStyle(FrostTheme.mutedText)
+          .lineLimit(2)
+      }
+      .padding(13)
+      .frame(maxWidth: .infinity, minHeight: 150, alignment: .leading)
+      .background(
+        RoundedRectangle(cornerRadius: FrostTheme.radius, style: .continuous)
+          .fill(
+            selectedAgentID == profile.agent.id
+              ? FrostTheme.accent.opacity(0.10) : FrostTheme.moduleWellBackground)
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: FrostTheme.radius, style: .continuous)
+          .stroke(
+            selectedAgentID == profile.agent.id
+              ? FrostTheme.accent.opacity(0.52) : FrostTheme.subtleBorder,
+            lineWidth: 1)
+      )
+    }
+    .buttonStyle(.plain)
+    .pointingHandCursor()
+    .help("查看 \(profile.agent.displayName) 的资产和活跃情况")
+  }
+
+  private func miniCount(_ title: String, _ value: Int) -> some View {
+    VStack(spacing: 2) {
+      Text("\(value)")
+        .font(.system(size: 14, weight: .bold))
+        .monospacedDigit()
+      Text(title)
+        .font(.system(size: 9.5, weight: .semibold))
+        .foregroundStyle(FrostTheme.mutedText)
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 7)
+    .background(
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .fill(FrostTheme.tableRowBackground)
+    )
+  }
+
   private var agentAnalysisDetail: some View {
     FrostCard("Agent Intelligence", subtitle: "证据覆盖与运行态摘要") {
       if let profile = selectedProfile {
+        let mcpServers = AgentSensingAnalyzer.mcpServers(
+          for: profile.agent, snapshot: viewModel.snapshot)
+        let skills = AgentSensingAnalyzer.skills(for: profile.agent, snapshot: viewModel.snapshot)
+        let contextFiles = AgentSensingAnalyzer.contextFiles(
+          for: profile.agent, snapshot: viewModel.snapshot)
+        let memories = AgentSensingAnalyzer.memories(
+          for: profile.agent, snapshot: viewModel.snapshot)
+        let processes = AgentSensingAnalyzer.runtimeProcesses(
+          for: profile.agent, snapshot: viewModel.snapshot)
+
         VStack(alignment: .leading, spacing: 12) {
           VStack(alignment: .leading, spacing: 6) {
             Text(profile.agent.displayName)
@@ -725,6 +806,44 @@ struct AgentScanView: View {
           pathGroup("Config", profile.agent.configPaths)
           pathGroup("Workspace", profile.agent.workspacePaths)
           pathGroup("Executable", profile.agent.executablePaths)
+
+          linkedAssetList(
+            "Active Processes",
+            emptyMessage: "当前没有运行中进程。",
+            items: processes.map {
+              LinkedAssetLabel(
+                title: "\($0.processName) · pid \($0.pid)",
+                subtitle: $0.executablePath ?? $0.bundlePath ?? "-",
+                systemImage: "play.circle")
+            })
+          linkedAssetList(
+            "MCP",
+            emptyMessage: "未关联 MCP Server。",
+            items: mcpServers.map {
+              LinkedAssetLabel(
+                title: $0.name, subtitle: $0.configPath, systemImage: "puzzlepiece.extension")
+            })
+          linkedAssetList(
+            "Skills",
+            emptyMessage: "未关联 Skill。",
+            items: skills.map {
+              LinkedAssetLabel(title: $0.name, subtitle: $0.path, systemImage: "terminal")
+            })
+          linkedAssetList(
+            "Context",
+            emptyMessage: "未关联上下文文件。",
+            items: contextFiles.map {
+              LinkedAssetLabel(
+                title: URL(fileURLWithPath: $0.path).lastPathComponent, subtitle: $0.path,
+                systemImage: "doc.text")
+            })
+          linkedAssetList(
+            "Memory",
+            emptyMessage: "未关联 Memory。",
+            items: memories.map {
+              LinkedAssetLabel(
+                title: $0.format.rawValue, subtitle: $0.path, systemImage: "externaldrive")
+            })
         }
       } else {
         EmptyStateView(
@@ -751,24 +870,15 @@ struct AgentScanView: View {
   }
 
   private var runtimeProcesses: [RuntimeProcessAsset] {
-    viewModel.snapshot.runtimeProcesses.sorted {
-      if $0.agentCandidateScore == $1.agentCandidateScore {
-        return $0.processName < $1.processName
-      }
-      return $0.agentCandidateScore > $1.agentCandidateScore
-    }
+    viewModel.runtimeProcesses
   }
 
   private var runtimeEvents: [DiscoveryEvent] {
-    viewModel.snapshot.events
-      .filter {
-        [.processObservation, .fileSystemChange, .permissionState, .storage].contains($0.kind)
-      }
-      .sorted { $0.createdAt > $1.createdAt }
+    viewModel.runtimeEvents
   }
 
   private var agentProfiles: [AgentSensingProfile] {
-    AgentSensingAnalyzer.profiles(from: viewModel.snapshot)
+    viewModel.agentProfiles
   }
 
   private var selectedProfile: AgentSensingProfile? {
@@ -1321,6 +1431,65 @@ struct AgentScanView: View {
     }
   }
 
+  private func linkedAssetList(
+    _ title: String,
+    emptyMessage: String,
+    items: [LinkedAssetLabel]
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 7) {
+      Text(title)
+        .font(.system(size: 11, weight: .bold))
+        .foregroundStyle(FrostTheme.mutedText)
+
+      if items.isEmpty {
+        Text(emptyMessage)
+          .font(.system(size: 10.5))
+          .foregroundStyle(FrostTheme.mutedText)
+          .padding(.vertical, 2)
+      } else {
+        ForEach(items.prefix(6)) { item in
+          Button {
+            if item.subtitle != "-" {
+              viewModel.openPath(item.subtitle)
+            }
+          } label: {
+            HStack(spacing: 8) {
+              Image(systemName: item.systemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(FrostTheme.accent)
+                .frame(width: 16)
+              VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                  .font(.system(size: 11, weight: .semibold))
+                  .lineLimit(1)
+                Text(item.subtitle)
+                  .font(.system(size: 10, design: .monospaced))
+                  .foregroundStyle(FrostTheme.mutedText)
+                  .lineLimit(1)
+                  .truncationMode(.middle)
+              }
+              Spacer(minLength: 0)
+            }
+            .padding(8)
+            .background(
+              RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(FrostTheme.tableRowBackground)
+            )
+          }
+          .buttonStyle(.plain)
+          .pointingHandCursor()
+          .help("打开 \(item.subtitle)")
+        }
+
+        if items.count > 6 {
+          Text("还有 \(items.count - 6) 项，可在 Static Scan 对应列表中分页查看。")
+            .font(.system(size: 10.5))
+            .foregroundStyle(FrostTheme.mutedText)
+        }
+      }
+    }
+  }
+
   private func compactPath(_ path: String) -> some View {
     Button {
       viewModel.openPath(path)
@@ -1422,6 +1591,59 @@ private struct PointingHandCursorModifier: ViewModifier {
           NSCursor.arrow.set()
         }
       }
+  }
+}
+
+private struct LinkedAssetLabel: Identifiable {
+  let id = UUID()
+  let title: String
+  let subtitle: String
+  let systemImage: String
+}
+
+private struct RuntimePulseMeter: View {
+  let activeProcessCount: Int
+  let activeAgentCount: Int
+  let isRefreshing: Bool
+
+  var body: some View {
+    TimelineView(.periodic(from: Date(), by: 1)) { timeline in
+      let phase =
+        timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3) / 3
+
+      ZStack {
+        Circle()
+          .fill(FrostTheme.moduleWellBackground)
+          .overlay(Circle().stroke(FrostTheme.subtleBorder, lineWidth: 1))
+
+        Circle()
+          .stroke(FrostTheme.accent.opacity(0.22), lineWidth: 10)
+          .scaleEffect(0.80 + phase * 0.16)
+          .opacity(isRefreshing ? 0.72 : 0.36)
+
+        Circle()
+          .stroke(FrostTheme.accent.opacity(0.58), lineWidth: 2)
+          .scaleEffect(0.68)
+
+        VStack(spacing: 6) {
+          Image(
+            systemName: isRefreshing
+              ? "arrow.triangle.2.circlepath" : "dot.radiowaves.left.and.right"
+          )
+          .font(.system(size: 21, weight: .bold))
+          .foregroundStyle(FrostTheme.accent)
+          Text("\(activeProcessCount)")
+            .font(.system(size: 34, weight: .bold))
+            .monospacedDigit()
+          Text("runtime processes")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(FrostTheme.mutedText)
+          StatusBadge(
+            label: "\(activeAgentCount) active agents",
+            tone: activeAgentCount > 0 ? .healthy : .neutral)
+        }
+      }
+    }
   }
 }
 

@@ -59,13 +59,20 @@ enum DiscoveryPathResolver {
 
 @MainActor
 final class AgentScanViewModel: ObservableObject {
-  @Published var snapshot: DiscoverySnapshot = .empty
+  @Published var snapshot: DiscoverySnapshot = .empty {
+    didSet {
+      rebuildDerivedState()
+    }
+  }
   @Published var isScanning = false
   @Published var isRuntimeRefreshing = false
   @Published var isRuntimeMonitoring = false
   @Published var lastRuntimeRefreshedAt: Date?
   @Published var errorMessage: String?
   @Published var configuration: DiscoveryConfiguration = .default()
+  @Published private(set) var agentProfiles: [AgentSensingProfile] = []
+  @Published private(set) var runtimeProcesses: [RuntimeProcessAsset] = []
+  @Published private(set) var runtimeEvents: [DiscoveryEvent] = []
 
   private let service: AgentDiscoveryService?
   private var hasStarted = false
@@ -78,6 +85,7 @@ final class AgentScanViewModel: ObservableObject {
       self.service = service
       configuration = service.configuration
       snapshot = service.snapshot
+      rebuildDerivedState()
       service.$snapshot
         .receive(on: DispatchQueue.main)
         .assign(to: &$snapshot)
@@ -122,10 +130,9 @@ final class AgentScanViewModel: ObservableObject {
   func refreshRuntimeNow() {
     guard let service, !isRuntimeRefreshing else { return }
     isRuntimeRefreshing = true
-    service.refreshRuntimeObservation()
-    bind(from: service)
-    lastRuntimeRefreshedAt = Date()
-    isRuntimeRefreshing = false
+    Task {
+      await refreshRuntimeNowAsync(service: service)
+    }
   }
 
   @discardableResult
@@ -182,17 +189,44 @@ final class AgentScanViewModel: ObservableObject {
     errorMessage = service.lastError
   }
 
+  private func rebuildDerivedState() {
+    agentProfiles = AgentSensingAnalyzer.profiles(from: snapshot)
+    runtimeProcesses = snapshot.runtimeProcesses.sorted {
+      if $0.agentCandidateScore == $1.agentCandidateScore {
+        return $0.processName < $1.processName
+      }
+      return $0.agentCandidateScore > $1.agentCandidateScore
+    }
+    runtimeEvents = snapshot.events
+      .filter {
+        [.processObservation, .fileSystemChange, .permissionState, .storage].contains($0.kind)
+      }
+      .sorted { $0.createdAt > $1.createdAt }
+  }
+
   private func startRuntimeRefreshLoop() {
     guard configuration.enableRuntimeObserver, runtimeRefreshTask == nil else { return }
     isRuntimeMonitoring = true
     runtimeRefreshTask = Task { [weak self] in
       while !Task.isCancelled {
+        guard let self else { return }
         await MainActor.run {
-          self?.refreshRuntimeNow()
+          guard let service = self.service, !self.isRuntimeRefreshing else { return }
+          self.isRuntimeRefreshing = true
+          Task {
+            await self.refreshRuntimeNowAsync(service: service)
+          }
         }
-        try? await Task.sleep(nanoseconds: 5_000_000_000)
+        try? await Task.sleep(nanoseconds: 15_000_000_000)
       }
     }
+  }
+
+  private func refreshRuntimeNowAsync(service: AgentDiscoveryService) async {
+    await service.refreshRuntimeObservation()
+    bind(from: service)
+    lastRuntimeRefreshedAt = Date()
+    isRuntimeRefreshing = false
   }
 
   private func rootPathCandidates(for agent: AgentAsset) -> [String] {
