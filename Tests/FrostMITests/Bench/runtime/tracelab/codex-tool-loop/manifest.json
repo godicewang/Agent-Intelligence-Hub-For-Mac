@@ -1,0 +1,41 @@
+{
+  "id": "runtime-tracelab-codex-tool-loop",
+  "baseline": "TraceLab",
+  "reference": "https://tracelab.cs.washington.edu/",
+  "license": "TraceLab code Apache-2.0; public dataset CC BY 4.0. This fixture is FrostMI-authored and does not include raw TraceLab records.",
+  "focus": "Coding-agent runtime loop with LLM request, tool calls, command execution evidence, context files, and session memory.",
+  "input": {
+    "events": "events.jsonl"
+  },
+  "expected": {
+    "agents": [
+      {
+        "normalizedName": "codex-cli",
+        "minConfidence": 90,
+        "runtimeStatus": "running"
+      }
+    ],
+    "runtimeProcessesMinCount": 1,
+    "evidenceMinCount": 5,
+    "contextFiles": [
+      "project/AGENTS.md"
+    ],
+    "memoryAssets": [
+      "project/.codex/session.jsonl"
+    ],
+    "requiredEventKinds": [
+      "processObservation",
+      "fileSystemChange"
+    ],
+    "requiredEvidenceSummaries": [
+      "LLM request observed",
+      "Tool call observed"
+    ],
+    "knownGaps": [
+      {
+        "capability": "session_graph_edges",
+        "reason": "The runtime bench currently validates observable event normalization, not full turn graph reconstruction."
+      }
+    ]
+  }
+}

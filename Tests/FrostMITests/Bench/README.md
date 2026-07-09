@@ -8,6 +8,7 @@ This bench keeps product data and test data sharply separated. Fixtures here are
 - `static/snyk/`: Snyk agent-scan-inspired static discovery fixtures. These are FrostMI-authored directory trees and config files, not copied scanner logic.
 - `generated/`: deterministic FrostMI scenarios derived from local fingerprint assumptions and edge cases.
 - `replay/tracelab/`: TraceLab adapter metadata and download instructions. Raw datasets are intentionally not committed.
+- `runtime/`: FrostMI-authored dynamic runtime sensing fixtures adapted from TraceLab-style coding-agent traces, AgentDojo-style untrusted tool-result flows, and Atomic Red Team/osquery/Sigma-style endpoint telemetry expectations.
 - `golden/claude-native-traces/`: compact Claude Code trace samples and expected graph manifests.
 - `tool-trajectories/traject-bench/`: TRAJECT-Bench adapter area for tool ordering and dependency tests.
 - `security/agentdojo/`: AgentDojo adapter area for prompt-injection and safe tool-flow tests.
@@ -42,3 +43,19 @@ Scripts/run_bench_tests.sh
 ```
 
 The full bench regenerates fingerprint-derived fixtures, runs discovery self-tests, runs the cold-start Agent bench in `--strict` mode, and verifies packaged app resource loading.
+
+## Runtime Sensing Commands
+
+Use the runtime bench when changing process attribution, runtime observation, file-event handling, Agent Analysis aggregation, or dynamic safety evidence:
+
+```bash
+Scripts/run_runtime_sensing_bench.sh
+```
+
+Current dynamic baselines:
+
+- `runtime/tracelab/codex-tool-loop/`: validates real coding-agent loop shape inspired by TraceLab: process identity, provider evidence, LLM request, tool call, workspace context, and session memory.
+- `runtime/agentdojo/untrusted-tool-result/`: validates AgentDojo-style dynamic safety signals: tool call, untrusted tool result, indirect prompt-injection evidence, and risky external destination evidence.
+- `runtime/atomic-endpoint/process-file-network/`: validates endpoint telemetry shape inspired by Atomic Red Team, osquery, and Sigma: process identity, workspace file changes, outbound model endpoint evidence, and permission state.
+
+`Scripts/run_bench_tests.sh` includes this runtime bench, so the full bench now covers both cold-start static discovery and dynamic runtime sensing.

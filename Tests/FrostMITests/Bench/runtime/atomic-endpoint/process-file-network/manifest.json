@@ -1,0 +1,48 @@
+{
+  "id": "runtime-atomic-endpoint-process-file-network",
+  "baseline": "Atomic Red Team + osquery/Sigma-style endpoint telemetry",
+  "reference": "https://github.com/redcanaryco/atomic-red-team",
+  "license": "Atomic Red Team MIT; osquery Apache-2.0; Sigma Detection Rule License. This fixture is FrostMI-authored and contains no copied rule content.",
+  "focus": "Endpoint runtime visibility for process identity, workspace file changes, outbound model endpoint evidence, and permission status.",
+  "input": {
+    "events": "events.jsonl"
+  },
+  "expected": {
+    "agents": [
+      {
+        "normalizedName": "cursor",
+        "minConfidence": 80,
+        "runtimeStatus": "running"
+      }
+    ],
+    "runtimeProcessesMinCount": 1,
+    "evidenceMinCount": 3,
+    "contextFiles": [
+      "project/.cursor/rules/runtime.mdc"
+    ],
+    "permissionStates": [
+      {
+        "capability": "fileSystemEvents",
+        "status": "available"
+      }
+    ],
+    "requiredEventKinds": [
+      "processObservation",
+      "fileSystemChange",
+      "permissionState"
+    ],
+    "requiredEvidenceSummaries": [
+      "Network destination observed"
+    ],
+    "knownGaps": [
+      {
+        "capability": "endpoint_security_auth_events",
+        "reason": "Development builds record permission state but do not require Endpoint Security entitlement-backed auth events."
+      },
+      {
+        "capability": "network_extension_flow_detail",
+        "reason": "The runtime bench records destination evidence without requiring Network Extension capture."
+      }
+    ]
+  }
+}

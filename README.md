@@ -76,6 +76,7 @@ Other product directions are intentionally not exposed as current UI modules unt
 - Local JSONL export with Finder reveal.
 - Default local-first, no-exec, minimum-permission discovery flow.
 - Manifest-driven Agent Sensing test bench under `Tests/FrostMITests/Bench`.
+- Dynamic runtime sensing bench for TraceLab-style coding-agent loops, AgentDojo-style untrusted tool results, and Atomic Red Team/osquery/Sigma-style endpoint telemetry.
 
 ## Search Keywords
 
@@ -138,7 +139,15 @@ For the current full bench path:
 Scripts/run_bench_tests.sh
 ```
 
-The bench lives under `Tests/FrostMITests/Bench` and includes Snyk-inspired static discovery fixtures, FrostMI-generated edge cases, external dataset adapter manifests, a compact Claude trace graph sample, and a SHA256-pinned TraceLab downloader. The full bench runs cold-start discovery in strict mode so extra assets, duplicate candidates, and owner mismatches fail the validation. Large external datasets are kept under git-ignored `datasets/`.
+The bench lives under `Tests/FrostMITests/Bench` and includes Snyk-inspired static discovery fixtures, FrostMI-generated edge cases, runtime sensing fixtures, external dataset adapter manifests, a compact Claude trace graph sample, and a SHA256-pinned TraceLab downloader. The full bench runs cold-start discovery in strict mode so extra assets, duplicate candidates, and owner mismatches fail the validation, then runs the dynamic runtime sensing bench.
+
+For focused dynamic runtime sensing validation:
+
+```bash
+Scripts/run_runtime_sensing_bench.sh
+```
+
+The runtime bench currently uses three FrostMI-authored fixture families: TraceLab-style coding-agent loops, AgentDojo-style untrusted tool-result flows, and Atomic Red Team/osquery/Sigma-style endpoint telemetry. It validates process attribution, runtime Agent confidence, LLM/tool evidence, workspace file events, memory/session traces, network destination evidence, and permission state normalization. Large external datasets are kept under git-ignored `datasets/`.
 
 To fetch the fixed TraceLab v0.0.1 JSONL dataset for future replay work:
 

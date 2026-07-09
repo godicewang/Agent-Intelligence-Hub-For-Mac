@@ -9,6 +9,9 @@ struct FrostMIApp: App {
     if CommandLine.arguments.contains("--cold-start-agent-bench") {
       Foundation.exit(DiscoverySelfTest.runColdStartAgentBench())
     }
+    if CommandLine.arguments.contains("--runtime-sensing-bench") {
+      Foundation.exit(RuntimeSensingBench.run())
+    }
     if CommandLine.arguments.contains("--discovery-print-summary") {
       Foundation.exit(DiscoveryDiagnostics.printColdScanSummary())
     }

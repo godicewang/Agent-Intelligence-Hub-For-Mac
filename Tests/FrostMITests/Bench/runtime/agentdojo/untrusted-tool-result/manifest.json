@@ -1,0 +1,42 @@
+{
+  "id": "runtime-agentdojo-untrusted-tool-result",
+  "baseline": "AgentDojo",
+  "reference": "https://github.com/ethz-spylab/agentdojo",
+  "license": "AgentDojo MIT. This fixture is FrostMI-authored and contains no copied AgentDojo task data.",
+  "focus": "Dynamic tool-calling flow with untrusted tool output, indirect prompt-injection signal, network destination evidence, and local context.",
+  "input": {
+    "events": "events.jsonl"
+  },
+  "expected": {
+    "agents": [
+      {
+        "normalizedName": "claude-code",
+        "minConfidence": 90,
+        "runtimeStatus": "running"
+      }
+    ],
+    "runtimeProcessesMinCount": 1,
+    "evidenceMinCount": 5,
+    "contextFiles": [
+      "project/CLAUDE.md"
+    ],
+    "requiredEventKinds": [
+      "processObservation",
+      "fileSystemChange"
+    ],
+    "requiredEvidenceSummaries": [
+      "Untrusted tool result observed",
+      "Network destination observed"
+    ],
+    "knownGaps": [
+      {
+        "capability": "taint_propagation",
+        "reason": "The current runtime layer records untrusted tool-result evidence but does not yet propagate taint through later LLM turns."
+      },
+      {
+        "capability": "runtime_policy_action",
+        "reason": "The current bench observes safety signals and does not yet validate block/rewrite/approval actions."
+      }
+    ]
+  }
+}

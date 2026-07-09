@@ -39,7 +39,9 @@ final class ProcessInspector {
     for row in rows {
       guard !isExpired(deadline) else { break }
       let parentChain = parentChain(for: row, rowsByPID: rowsByPID)
-      result.merge(knownProcessResult(for: row, parentChain: parentChain))
+      let knownResult = knownProcessResult(for: row, parentChain: parentChain)
+      result.merge(knownResult)
+      guard knownResult.runtimeProcesses.isEmpty else { continue }
 
       let input = BehaviorFingerprintInput(
         processName: URL(fileURLWithPath: row.command).lastPathComponent,
@@ -59,7 +61,7 @@ final class ProcessInspector {
         wroteSessionLikeFile: row.arguments.range(
           of: #"jsonl|sqlite|memory|conversation"#, options: [.regularExpression, .caseInsensitive])
           != nil,
-        observedLLMCommandLoop: false
+        observedLLMCommandLoop: isLLMCommandLoop(arguments: row.arguments)
       )
       let behavior = behaviorEngine.evaluate(input)
       guard behavior.score >= 40 else { continue }
@@ -131,7 +133,9 @@ final class ProcessInspector {
     let matchingFingerprints = pathScopedMatches.isEmpty ? nameMatches : pathScopedMatches
 
     for fingerprint in matchingFingerprints {
-      let confidence = fingerprint.confidenceWeights.process
+      let runtimeContext = knownRuntimeContext(for: row)
+      let confidence = (fingerprint.confidenceWeights.process + runtimeContext.bonus)
+        .clampedConfidence
       let agent = AgentAsset(
         displayName: fingerprint.displayName,
         normalizedName: fingerprint.normalizedName,
@@ -145,7 +149,8 @@ final class ProcessInspector {
         managedStatus: .observableOnly,
         runtimeStatus: .running,
         riskLevel: .informational,
-        metadataSummary: "Running process matched known fingerprint: \(processName)"
+        metadataSummary: (["Running process matched known fingerprint: \(processName)"]
+          + runtimeContext.summaries).joined(separator: "; ")
       )
       result.agents.append(agent)
       result.runtimeProcesses.append(
@@ -171,11 +176,46 @@ final class ProcessInspector {
           source: fingerprint.normalizedName,
           processId: row.pid,
           confidenceDelta: confidence,
-          summary: "Known process fingerprint matched",
+          summary: (["Known process fingerprint matched"] + runtimeContext.summaries).joined(
+            separator: "; "),
           rawKey: processName
         ))
     }
     return result
+  }
+
+  private func knownRuntimeContext(for row: ProcessObservation) -> (
+    bonus: Int, summaries: [String]
+  ) {
+    var bonus = 0
+    var summaries: [String] = []
+    let arguments = row.arguments
+    let lower = arguments.lowercased()
+    let providerNames = providers(in: arguments)
+    if !providerNames.isEmpty {
+      bonus += 20
+      summaries.append("Runtime arguments reference \(providerNames.joined(separator: ", "))")
+    }
+    if commandScore(in: arguments) > 0 {
+      bonus += 10
+      summaries.append("Runtime arguments reference tool execution")
+    }
+    if workspace(in: arguments) != nil {
+      bonus += 10
+      summaries.append("Runtime arguments reference a known workspace")
+    }
+    if lower.range(
+      of: #"mcpservers|tools/list|function_call|tool_choice"#,
+      options: [.regularExpression]) != nil
+    {
+      bonus += 15
+      summaries.append("Runtime arguments reference MCP/tool schemas")
+    }
+    if isLLMCommandLoop(arguments: arguments) {
+      bonus += 25
+      summaries.append("LLM request and tool feedback loop markers observed")
+    }
+    return (min(bonus, 70), summaries)
   }
 
   private func observedProcessName(for row: ProcessObservation) -> String {
@@ -206,7 +246,7 @@ final class ProcessInspector {
 
   private func processNameMatches(_ processName: String, fingerprint: AgentFingerprint) -> Bool {
     fingerprint.processNames.contains {
-      $0.caseInsensitiveCompare(processName) == .orderedSame
+      $0 == processName
     }
   }
 
@@ -322,6 +362,25 @@ final class ProcessInspector {
     return ["bash", "python", "node", "git", "npm", "curl"].filter {
       lower.contains(" \($0) ") || lower.contains("/\($0) ")
     }.count
+  }
+
+  private func isLLMCommandLoop(arguments: String) -> Bool {
+    let lower = arguments.lowercased()
+    let hasLLMRequest =
+      !providers(in: arguments).isEmpty
+      || lower.contains("/v1/chat/completions")
+      || lower.contains("/v1/responses")
+      || lower.contains("/messages")
+    let hasToolExecution = commandScore(in: arguments) > 0
+    let hasToolSchema =
+      lower.range(
+        of: #"mcpservers|tools/list|function_call|tool_choice"#,
+        options: [.regularExpression]) != nil
+    let writesRuntimeTrace =
+      lower.range(
+        of: #"jsonl|sqlite|memory|conversation|tool_result|tool_call"#,
+        options: [.regularExpression]) != nil
+    return hasLLMRequest && (hasToolExecution || hasToolSchema || writesRuntimeTrace)
   }
 
   private func workspace(in text: String) -> String? {
