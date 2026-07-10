@@ -56,11 +56,24 @@ final class NetworkFlowMonitor {
 
   func captureEstablishedTCPFlows(
     forProcessIds processIds: Set<Int32>? = nil,
-    limit: Int = 128
+    limit: Int = 128,
+    timeout: TimeInterval = 1.5
   ) -> [NetworkFlowSnapshot] {
+    guard FileManager.default.isExecutableFile(atPath: "/usr/sbin/lsof") else { return [] }
+    let scopedProcessIds = processIds?
+      .filter { $0 > 0 }
+      .sorted()
+    if let scopedProcessIds, scopedProcessIds.isEmpty {
+      return []
+    }
+
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-    process.arguments = ["-nP", "-iTCP", "-sTCP:ESTABLISHED"]
+    var arguments = ["-nP", "-iTCP", "-sTCP:ESTABLISHED"]
+    if let scopedProcessIds {
+      arguments += ["-a", "-p", scopedProcessIds.map(String.init).joined(separator: ",")]
+    }
+    process.arguments = arguments
     let outputPipe = Pipe()
     process.standardOutput = outputPipe
     process.standardError = Pipe()
@@ -70,8 +83,19 @@ final class NetworkFlowMonitor {
     } catch {
       return []
     }
+
+    let timeoutState = NetworkCommandTimeoutState()
+    let timeoutWork = DispatchWorkItem { [weak process, timeoutState] in
+      guard let process, process.isRunning else { return }
+      timeoutState.markTimedOut()
+      process.terminate()
+    }
+    DispatchQueue.global(qos: .utility).asyncAfter(
+      deadline: .now() + min(max(timeout, 0.1), 3), execute: timeoutWork)
     let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+    timeoutWork.cancel()
     process.waitUntilExit()
+    guard !timeoutState.didTimeOut, process.terminationStatus == 0 else { return [] }
     let output = String(decoding: data, as: UTF8.self)
     let observedAt = Date()
     return output.components(separatedBy: .newlines)
@@ -158,5 +182,22 @@ final class NetworkFlowMonitor {
     let address = String(trimmed[..<colon])
     let port = Int(trimmed[trimmed.index(after: colon)...])
     return (address, port)
+  }
+}
+
+private final class NetworkCommandTimeoutState: @unchecked Sendable {
+  private let lock = NSLock()
+  private var timedOut = false
+
+  var didTimeOut: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return timedOut
+  }
+
+  func markTimedOut() {
+    lock.lock()
+    timedOut = true
+    lock.unlock()
   }
 }

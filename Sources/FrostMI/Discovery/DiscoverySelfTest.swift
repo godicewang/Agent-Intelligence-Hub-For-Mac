@@ -898,6 +898,48 @@ enum DiscoverySelfTest {
         && snapshot.agents.first?.runtimeStatus == .recentlySeen
     }
 
+    check("AssetGraphStore runtime refresh preserves static inventories", failures: &failures) {
+      let dbURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString)
+        .appendingPathComponent("FrostADR.sqlite")
+      let store = try AssetGraphStore(database: FrostDatabase(url: dbURL))
+      let agent = AgentAsset(
+        displayName: "Static Fixture",
+        normalizedName: "static-fixture",
+        agentType: .known,
+        confidence: 90,
+        discoveryMethods: [.knownPath],
+        configPaths: ["/tmp/static-fixture/mcp.json"])
+      var staticResult = DiscoveryScanResult()
+      staticResult.agents = [agent]
+      staticResult.mcpServers = [
+        MCPServerAsset(
+          name: "static-mcp",
+          sourceAgentId: agent.id,
+          transport: .stdio,
+          configPath: "/tmp/static-fixture/mcp.json",
+          scope: .user,
+          manifestHash: "static-fixture")
+      ]
+      staticResult.events = [completedColdStartEvent()]
+      _ = try store.merge(staticResult)
+
+      var runtimeResult = DiscoveryScanResult()
+      runtimeResult.runtimeProcesses = [
+        RuntimeProcessAsset(
+          sourceAgentId: agent.id,
+          pid: 9202,
+          ppid: 1,
+          processName: "static-fixture",
+          executablePath: "/tmp/static-fixture/bin",
+          agentCandidateScore: 90)
+      ]
+      let reloaded = try store.replaceRuntimeObservation(runtimeResult)
+      return reloaded.mcpServers.count == 1
+        && reloaded.mcpServers.first?.name == "static-mcp"
+        && reloaded.runtimeProcesses.count == 1
+    }
+
     check("Agent sensing analyzer joins static and runtime evidence", failures: &failures) {
       let agentId = UUID()
       let agent = AgentAsset(
@@ -1012,6 +1054,53 @@ enum DiscoverySelfTest {
       let reloaded = try store.merge(second)
       return reloaded.agents.count == 1
         && reloaded.agents[0].normalizedName == "current-agent"
+    }
+
+    check("AssetGraphStore preserves runtime audit history across static rebuilds", failures: &failures) {
+      let dbURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString)
+        .appendingPathComponent("FrostADR.sqlite")
+      let store = try AssetGraphStore(database: FrostDatabase(url: dbURL))
+      _ = try store.appendRuntimeEvents([
+        RuntimeEventRecord(
+          sessionId: "audit-history",
+          agentName: "codex-cli",
+          kind: .mcpToolCall,
+          timestamp: Date(),
+          source: "self-test",
+          toolName: "read_file",
+          message: "Runtime audit event before static rebuild.")
+      ])
+
+      var first = DiscoveryScanResult()
+      first.agents = [
+        AgentAsset(
+          displayName: "First Static Agent",
+          normalizedName: "first-static-agent",
+          agentType: .known,
+          confidence: 90,
+          discoveryMethods: [.knownPath])
+      ]
+      first.events = [completedColdStartEvent()]
+      _ = try store.merge(first)
+
+      var second = DiscoveryScanResult()
+      second.agents = [
+        AgentAsset(
+          displayName: "Second Static Agent",
+          normalizedName: "second-static-agent",
+          agentType: .known,
+          confidence: 90,
+          discoveryMethods: [.knownPath])
+      ]
+      second.events = [completedColdStartEvent()]
+      let snapshot = try store.merge(second)
+      let runtimeEvents = try store.loadRuntimeEvents()
+      let graphs = try store.loadRuntimeSessionGraphs()
+      return snapshot.agents.count == 1
+        && snapshot.agents[0].normalizedName == "second-static-agent"
+        && runtimeEvents.count == 1
+        && graphs.first?.sessionId == "audit-history"
     }
 
     check("AssetGraphStore exports JSONL records", failures: &failures) {

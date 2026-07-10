@@ -113,6 +113,21 @@ struct RuntimeEventRecord: Identifiable, Codable, Hashable {
     formatter.dateFormat = "yyyyMMdd"
     return "\(prefix)-\(formatter.string(from: timestamp))"
   }
+
+  var persistenceKey: String {
+    switch kind {
+    case .networkEvent where source == "macos-lsof-network-flow":
+      guard let correlationKey, !correlationKey.isEmpty else { return id.uuidString }
+      return "network-snapshot|\(sessionId)|\(correlationKey)"
+    case .processObservation where source == "macos-process-snapshot":
+      return "process-snapshot|\(sessionId)"
+    case .fileEvent where source == "macos-fsevents":
+      guard let path, !path.isEmpty else { return id.uuidString }
+      return "file-observation|\(sessionId)|\(path)"
+    default:
+      return id.uuidString
+    }
+  }
 }
 
 struct RuntimeSessionGraph: Identifiable, Codable, Hashable {

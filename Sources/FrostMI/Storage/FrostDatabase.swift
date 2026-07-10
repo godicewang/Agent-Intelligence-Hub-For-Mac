@@ -11,10 +11,18 @@ final class FrostDatabase {
       at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
 
     var handle: OpaquePointer?
-    guard sqlite3_open(url.path, &handle) == SQLITE_OK else {
+    guard sqlite3_open_v2(
+      url.path,
+      &handle,
+      SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX,
+      nil
+    ) == SQLITE_OK else {
       throw StorageError.openFailed(String(cString: sqlite3_errmsg(handle)))
     }
     db = handle
+    sqlite3_busy_timeout(handle, 5_000)
+    try execute("PRAGMA journal_mode=WAL;")
+    try execute("PRAGMA synchronous=NORMAL;")
     try execute(
       """
       CREATE TABLE IF NOT EXISTS records (
@@ -52,7 +60,7 @@ final class FrostDatabase {
       throw StorageError.encodeFailed
     }
     let sql = "INSERT OR REPLACE INTO records(kind, key, payload, updated_at) VALUES (?, ?, ?, ?);"
-    try withStatement(sql) { statement in
+    return try withStatement(sql) { statement in
       sqlite3_bind_text(statement, 1, kind.rawValue, -1, sqliteTransient)
       sqlite3_bind_text(statement, 2, key, -1, sqliteTransient)
       sqlite3_bind_text(statement, 3, payload, -1, sqliteTransient)
@@ -87,12 +95,64 @@ final class FrostDatabase {
 
   func delete(kind: RecordKind) throws {
     let sql = "DELETE FROM records WHERE kind = ?;"
-    try withStatement(sql) { statement in
+    return try withStatement(sql) { statement in
       sqlite3_bind_text(statement, 1, kind.rawValue, -1, sqliteTransient)
       guard sqlite3_step(statement) == SQLITE_DONE else {
         throw StorageError.executeFailed(errorMessage)
       }
     }
+  }
+
+  func delete(kind: RecordKind, key: String) throws {
+    let sql = "DELETE FROM records WHERE kind = ? AND key = ?;"
+    try withStatement(sql) { statement in
+      sqlite3_bind_text(statement, 1, kind.rawValue, -1, sqliteTransient)
+      sqlite3_bind_text(statement, 2, key, -1, sqliteTransient)
+      guard sqlite3_step(statement) == SQLITE_DONE else {
+        throw StorageError.executeFailed(errorMessage)
+      }
+    }
+  }
+
+  func delete(kinds: [RecordKind]) throws {
+    for kind in kinds {
+      try delete(kind: kind)
+    }
+  }
+
+  @discardableResult
+  func trimToNewest(_ limit: Int, kind: RecordKind) throws -> Int {
+    guard limit >= 0 else { return 0 }
+    let sql =
+      """
+      DELETE FROM records
+      WHERE kind = ?
+        AND key NOT IN (
+          SELECT key
+          FROM records
+          WHERE kind = ?
+          ORDER BY updated_at DESC, key DESC
+          LIMIT ?
+        );
+      """
+    return try withStatement(sql) { statement in
+      sqlite3_bind_text(statement, 1, kind.rawValue, -1, sqliteTransient)
+      sqlite3_bind_text(statement, 2, kind.rawValue, -1, sqliteTransient)
+      sqlite3_bind_int64(statement, 3, sqlite3_int64(limit))
+      guard sqlite3_step(statement) == SQLITE_DONE else {
+        throw StorageError.executeFailed(errorMessage)
+      }
+      return Int(sqlite3_changes(db))
+    }
+  }
+
+  func optimize() throws {
+    try execute("PRAGMA optimize;")
+  }
+
+  func compact() throws {
+    try optimize()
+    try execute("VACUUM;")
   }
 
   func execute(_ sql: String) throws {

@@ -6,6 +6,8 @@ final class AgentDiscoveryService: ObservableObject {
   @Published private(set) var isScanning = false
   @Published private(set) var lastError: String?
   @Published private(set) var lastExportURL: URL?
+  @Published private(set) var runtimeEventRecords: [RuntimeEventRecord] = []
+  @Published private(set) var runtimeSessionGraphs: [RuntimeSessionGraph] = []
   let configuration: DiscoveryConfiguration
 
   private let store: AssetGraphStore
@@ -54,6 +56,7 @@ final class AgentDiscoveryService: ObservableObject {
       config: configuration
     )
     snapshot = (try? actualStore.loadSnapshot()) ?? .empty
+    reloadRuntimeHistory()
   }
 
   func start() async {
@@ -61,11 +64,13 @@ final class AgentDiscoveryService: ObservableObject {
       await runColdStartScan()
     }
     startRuntimeObservation()
+    await refreshRuntimeObservation()
   }
 
   func startRuntimeObservation() {
     let states = runtimeObserver.start { [weak self] snapshot in
       self?.snapshot = snapshot
+      self?.reloadRuntimeHistory()
     }
     if !states.isEmpty {
       var result = DiscoveryScanResult()
@@ -119,10 +124,18 @@ final class AgentDiscoveryService: ObservableObject {
       self.snapshot = snapshot
       lastError = nil
     }
+    reloadRuntimeHistory()
   }
 
   func stopRuntimeObservation() {
     runtimeObserver.stop()
+  }
+
+  private func reloadRuntimeHistory() {
+    runtimeEventRecords = (try? store.loadRuntimeEvents())?
+      .sorted { $0.timestamp > $1.timestamp } ?? []
+    runtimeSessionGraphs = (try? store.loadRuntimeSessionGraphs())?
+      .sorted { $0.updatedAt > $1.updatedAt } ?? []
   }
 
   private func runScannerInBackground() async -> DiscoveryScanResult {

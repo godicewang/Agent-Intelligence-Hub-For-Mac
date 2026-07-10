@@ -1,15 +1,27 @@
 import Foundation
 
 final class RuntimeEventStore: @unchecked Sendable {
-  private let database: FrostDatabase
-  private let lock = NSLock()
+  struct Retention: Hashable {
+    var maxStoredEvents: Int
+    var maxGraphNodesPerSession: Int
+    var maxFileEvents: Int = 240
+    var maxNetworkEvents: Int = 160
+    var maxProcessObservations: Int = 32
 
-  init(database: FrostDatabase) {
-    self.database = database
+    static let `default` = Retention(maxStoredEvents: 1_200, maxGraphNodesPerSession: 240)
   }
 
-  convenience init(url: URL = FrostDatabase.defaultURL()) throws {
-    try self.init(database: FrostDatabase(url: url))
+  private let database: FrostDatabase
+  private let retention: Retention
+  private let lock = NSLock()
+
+  init(database: FrostDatabase, retention: Retention = .default) {
+    self.database = database
+    self.retention = retention
+  }
+
+  convenience init(url: URL = FrostDatabase.defaultURL(), retention: Retention = .default) throws {
+    try self.init(database: FrostDatabase(url: url), retention: retention)
   }
 
   @discardableResult
@@ -23,9 +35,27 @@ final class RuntimeEventStore: @unchecked Sendable {
     return try withLock {
       for event in events {
         try database.upsert(
-          event, kind: .runtimeEvent, key: event.id.uuidString, updatedAt: event.timestamp)
+          event, kind: .runtimeEvent, key: event.persistenceKey, updatedAt: event.timestamp)
       }
-      return try rebuildSessionGraphs(sessionIds: Set(events.map(\.sessionId)))
+      var allEvents = try database.loadAll(RuntimeEventRecord.self, kind: .runtimeEvent)
+      let kindPruned = try trimNoisyEventKinds(allEvents)
+      if kindPruned > 0 {
+        allEvents = try database.loadAll(RuntimeEventRecord.self, kind: .runtimeEvent)
+      }
+      let globalPruned = try database.trimToNewest(retention.maxStoredEvents, kind: .runtimeEvent)
+      if globalPruned > 0 {
+        allEvents = try database.loadAll(RuntimeEventRecord.self, kind: .runtimeEvent)
+      }
+      let removedCount = kindPruned + globalPruned
+      let sessionIds: Set<String>
+      if removedCount > 0 {
+        try database.delete(kind: .runtimeSessionGraph)
+        sessionIds = Set(allEvents.map(\.sessionId))
+        try? database.optimize()
+      } else {
+        sessionIds = Set(events.map(\.sessionId))
+      }
+      return try rebuildSessionGraphs(sessionIds: sessionIds, allEvents: allEvents)
     }
   }
 
@@ -54,9 +84,9 @@ final class RuntimeEventStore: @unchecked Sendable {
   @discardableResult
   func rebuildAllSessionGraphs() throws -> [RuntimeSessionGraph] {
     try withLock {
-      let sessionIds = Set(
-        try database.loadAll(RuntimeEventRecord.self, kind: .runtimeEvent).map(\.sessionId))
-      return try rebuildSessionGraphs(sessionIds: sessionIds)
+      let allEvents = try database.loadAll(RuntimeEventRecord.self, kind: .runtimeEvent)
+      let sessionIds = Set(allEvents.map(\.sessionId))
+      return try rebuildSessionGraphs(sessionIds: sessionIds, allEvents: allEvents)
     }
   }
 
@@ -66,8 +96,9 @@ final class RuntimeEventStore: @unchecked Sendable {
     return try body()
   }
 
-  private func rebuildSessionGraphs(sessionIds: Set<String>) throws -> [RuntimeSessionGraph] {
-    let allEvents = try database.loadAll(RuntimeEventRecord.self, kind: .runtimeEvent)
+  private func rebuildSessionGraphs(
+    sessionIds: Set<String>, allEvents: [RuntimeEventRecord]
+  ) throws -> [RuntimeSessionGraph] {
     let grouped = Dictionary(grouping: allEvents.filter { sessionIds.contains($0.sessionId) }) {
       $0.sessionId
     }
@@ -83,7 +114,8 @@ final class RuntimeEventStore: @unchecked Sendable {
   }
 
   private func makeGraph(sessionId: String, events: [RuntimeEventRecord]) -> RuntimeSessionGraph {
-    let nodes = events.map { event in
+    let visibleEvents = Array(events.suffix(retention.maxGraphNodesPerSession))
+    let nodes = visibleEvents.map { event in
       RuntimeSessionNode(
         id: event.id.uuidString,
         eventId: event.id,
@@ -116,6 +148,28 @@ final class RuntimeEventStore: @unchecked Sendable {
       edges: edges,
       updatedAt: Date()
     )
+  }
+
+  private func trimNoisyEventKinds(_ events: [RuntimeEventRecord]) throws -> Int {
+    let limits: [(RuntimeEventKind, Int)] = [
+      (.fileEvent, retention.maxFileEvents),
+      (.networkEvent, retention.maxNetworkEvents),
+      (.processObservation, retention.maxProcessObservations),
+    ]
+    var removedCount = 0
+    for (kind, limit) in limits {
+      let overflow = events.filter { $0.kind == kind }
+        .sorted { $0.timestamp > $1.timestamp }
+        .dropFirst(max(0, limit))
+      for event in overflow {
+        try database.delete(kind: .runtimeEvent, key: event.persistenceKey)
+        if event.persistenceKey != event.id.uuidString {
+          try database.delete(kind: .runtimeEvent, key: event.id.uuidString)
+        }
+        removedCount += 1
+      }
+    }
+    return removedCount
   }
 
   private func title(for event: RuntimeEventRecord) -> String {

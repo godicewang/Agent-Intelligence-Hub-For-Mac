@@ -73,7 +73,8 @@ final class AgentScanViewModel: ObservableObject {
   @Published var configuration: DiscoveryConfiguration = .default()
   @Published private(set) var agentProfiles: [AgentSensingProfile] = []
   @Published private(set) var runtimeProcesses: [RuntimeProcessAsset] = []
-  @Published private(set) var runtimeEvents: [DiscoveryEvent] = []
+  @Published private(set) var runtimeEvents: [RuntimeEventRecord] = []
+  @Published private(set) var runtimeSessionGraphs: [RuntimeSessionGraph] = []
 
   private let service: AgentDiscoveryService?
   private var hasStarted = false
@@ -96,6 +97,12 @@ final class AgentScanViewModel: ObservableObject {
       service.$lastError
         .receive(on: DispatchQueue.main)
         .assign(to: &$errorMessage)
+      service.$runtimeEventRecords
+        .receive(on: DispatchQueue.main)
+        .assign(to: &$runtimeEvents)
+      service.$runtimeSessionGraphs
+        .receive(on: DispatchQueue.main)
+        .assign(to: &$runtimeSessionGraphs)
     } catch {
       service = nil
       errorMessage = error.localizedDescription
@@ -151,6 +158,7 @@ final class AgentScanViewModel: ObservableObject {
 
     if enabled {
       service.startRuntimeObservation()
+      refreshRuntimeNow()
       startRuntimeRefreshLoop()
     } else {
       runtimeRefreshTask?.cancel()
@@ -226,12 +234,6 @@ final class AgentScanViewModel: ObservableObject {
       }
       return $0.agentCandidateScore > $1.agentCandidateScore
     }
-    runtimeEvents = snapshot.events
-      .filter {
-        [.processObservation, .fileSystemChange, .networkFlow, .permissionState, .storage]
-          .contains($0.kind)
-      }
-      .sorted { $0.createdAt > $1.createdAt }
   }
 
   private func startRuntimeRefreshLoop() {
@@ -239,6 +241,8 @@ final class AgentScanViewModel: ObservableObject {
     isRuntimeMonitoring = true
     runtimeRefreshTask = Task { [weak self] in
       while !Task.isCancelled {
+        try? await Task.sleep(nanoseconds: 15_000_000_000)
+        guard !Task.isCancelled else { return }
         guard let self else { return }
         await MainActor.run {
           guard let service = self.service, !self.isRuntimeRefreshing else { return }
@@ -247,7 +251,6 @@ final class AgentScanViewModel: ObservableObject {
             await self.refreshRuntimeNowAsync(service: service)
           }
         }
-        try? await Task.sleep(nanoseconds: 15_000_000_000)
       }
     }
   }

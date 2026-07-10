@@ -57,6 +57,7 @@ final class AssetGraphStore: @unchecked Sendable {
           snapshot.evidence.append(evidence)
         }
       }
+      snapshot.evidence = trimmedEvidence(snapshot.evidence)
 
       for incoming in result.agents {
         if let index = snapshot.agents.firstIndex(where: { $0.mergeKeyMatches(incoming) }) {
@@ -90,9 +91,6 @@ final class AssetGraphStore: @unchecked Sendable {
           events: snapshot.events)
       }
 
-      if replacesColdStartSnapshot {
-        try database.deleteAll()
-      }
       try persist(snapshot)
       return snapshot
     }
@@ -126,6 +124,7 @@ final class AssetGraphStore: @unchecked Sendable {
           snapshot.evidence.append(evidence)
         }
       }
+      snapshot.evidence = trimmedEvidence(snapshot.evidence)
       snapshot.permissionStates = mergeByKey(snapshot.permissionStates + result.permissionStates) {
         $0.capability.rawValue
       }
@@ -137,8 +136,7 @@ final class AssetGraphStore: @unchecked Sendable {
         runtimeProcesses: snapshot.runtimeProcesses, evidence: snapshot.evidence,
         events: snapshot.events)
 
-      try database.delete(kind: .runtimeProcess)
-      try persist(snapshot)
+      try persist(snapshot, replacing: Self.runtimeObservationRecordKinds)
       return snapshot
     }
   }
@@ -189,33 +187,56 @@ final class AssetGraphStore: @unchecked Sendable {
   }
 
   private func persist(_ snapshot: DiscoverySnapshot) throws {
-    for asset in snapshot.agents {
-      try database.upsert(asset, kind: .agent, key: asset.primaryStoreKey)
+    try persist(snapshot, replacing: Self.snapshotRecordKinds)
+  }
+
+  private func persist(_ snapshot: DiscoverySnapshot, replacing kinds: [RecordKind]) throws {
+    try database.delete(kinds: kinds)
+    if kinds.contains(.agent) {
+      for asset in snapshot.agents {
+        try database.upsert(asset, kind: .agent, key: asset.primaryStoreKey)
+      }
     }
-    for asset in snapshot.mcpServers {
-      try database.upsert(
-        asset, kind: .mcpServer, key: "\(asset.configPath)|\(asset.name)|\(asset.manifestHash)")
+    if kinds.contains(.mcpServer) {
+      for asset in snapshot.mcpServers {
+        try database.upsert(
+          asset, kind: .mcpServer, key: "\(asset.configPath)|\(asset.name)|\(asset.manifestHash)")
+      }
     }
-    for asset in snapshot.skills {
-      try database.upsert(asset, kind: .skill, key: "\(asset.path)|\(asset.hash)")
+    if kinds.contains(.skill) {
+      for asset in snapshot.skills {
+        try database.upsert(asset, kind: .skill, key: "\(asset.path)|\(asset.hash)")
+      }
     }
-    for asset in snapshot.contextFiles {
-      try database.upsert(asset, kind: .contextFile, key: asset.path)
+    if kinds.contains(.contextFile) {
+      for asset in snapshot.contextFiles {
+        try database.upsert(asset, kind: .contextFile, key: asset.path)
+      }
     }
-    for asset in snapshot.memories {
-      try database.upsert(asset, kind: .memory, key: asset.path)
+    if kinds.contains(.memory) {
+      for asset in snapshot.memories {
+        try database.upsert(asset, kind: .memory, key: asset.path)
+      }
     }
-    for asset in snapshot.runtimeProcesses {
-      try database.upsert(asset, kind: .runtimeProcess, key: String(asset.pid))
+    if kinds.contains(.runtimeProcess) {
+      for asset in snapshot.runtimeProcesses {
+        try database.upsert(asset, kind: .runtimeProcess, key: String(asset.pid))
+      }
     }
-    for evidence in snapshot.evidence {
-      try database.upsert(evidence, kind: .evidence, key: evidence.id.uuidString)
+    if kinds.contains(.evidence) {
+      for evidence in snapshot.evidence {
+        try database.upsert(evidence, kind: .evidence, key: evidence.id.uuidString)
+      }
     }
-    for state in snapshot.permissionStates {
-      try database.upsert(state, kind: .permissionState, key: state.capability.rawValue)
+    if kinds.contains(.permissionState) {
+      for state in snapshot.permissionStates {
+        try database.upsert(state, kind: .permissionState, key: state.capability.rawValue)
+      }
     }
-    for event in snapshot.events {
-      try database.upsert(event, kind: .event, key: event.id.uuidString)
+    if kinds.contains(.event) {
+      for event in snapshot.events {
+        try database.upsert(event, kind: .event, key: event.id.uuidString)
+      }
     }
   }
 
@@ -228,23 +249,58 @@ final class AssetGraphStore: @unchecked Sendable {
   }
 
   private func trimmedObservationEvents(_ events: [DiscoveryEvent]) -> [DiscoveryEvent] {
-    let processEvents = events.filter { $0.kind == .processObservation }
+    let limits: [DiscoveryEventKind: Int] = [
+      .coldStartScan: 12,
+      .processObservation: 20,
+      .fileSystemChange: 120,
+      .networkFlow: 120,
+      .permissionState: 24,
+      .storage: 24,
+    ]
+    let retainedIds = Set(
+      DiscoveryEventKind.allCases.flatMap { kind in
+        events.filter { $0.kind == kind }
+          .sorted { $0.createdAt > $1.createdAt }
+          .prefix(limits[kind] ?? 0)
+          .map(\.id)
+      })
+    return events.filter { retainedIds.contains($0.id) }
       .sorted { $0.createdAt > $1.createdAt }
-    let fileSystemEvents = events.filter { $0.kind == .fileSystemChange }
-      .sorted { $0.createdAt > $1.createdAt }
-    let keptProcessEventIds = Set(processEvents.prefix(20).map(\.id))
-    let keptFileSystemEventIds = Set(fileSystemEvents.prefix(120).map(\.id))
-    return events.filter {
-      switch $0.kind {
-      case .processObservation:
-        keptProcessEventIds.contains($0.id)
-      case .fileSystemChange:
-        keptFileSystemEventIds.contains($0.id)
-      default:
-        true
-      }
-    }
+      .prefix(256)
+      .map { $0 }
   }
+
+  private func trimmedEvidence(_ evidence: [DiscoveryEvidence]) -> [DiscoveryEvidence] {
+    let behaviorEvidence = evidence.filter { $0.evidenceType == .behavior }
+      .sorted { $0.observedAt > $1.observedAt }
+      .prefix(180)
+    let assetEvidence = evidence.filter { $0.evidenceType != .behavior }
+      .sorted { $0.observedAt > $1.observedAt }
+      .prefix(720)
+    return (behaviorEvidence + assetEvidence)
+      .sorted { $0.observedAt > $1.observedAt }
+      .map { $0 }
+  }
+
+  private static let snapshotRecordKinds: [RecordKind] = [
+    .agent,
+    .mcpServer,
+    .skill,
+    .contextFile,
+    .memory,
+    .runtimeProcess,
+    .evidence,
+    .permissionState,
+    .event,
+  ]
+
+  private static let runtimeObservationRecordKinds: [RecordKind] = [
+    .agent,
+    .runtimeProcess,
+    .evidence,
+    .permissionState,
+    .event,
+  ]
 
   private func append<T: Encodable>(_ values: [T], kind: String, to lines: inout [String]) throws {
     for value in values {

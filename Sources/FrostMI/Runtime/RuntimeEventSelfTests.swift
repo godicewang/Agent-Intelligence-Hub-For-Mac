@@ -62,8 +62,145 @@ enum RuntimeEventSelfTests {
         print("Runtime event store self-test failed: session graph did not preserve event order.")
         return 1
       }
+
+      let boundedStore = try RuntimeEventStore(
+        url: temporaryDatabaseURL(label: "bounded"),
+        retention: .init(maxStoredEvents: 3, maxGraphNodesPerSession: 2))
+      let boundedEvents = (0..<5).map { index in
+        RuntimeEventRecord(
+          sessionId: "bounded-session",
+          kind: .fileEvent,
+          timestamp: startedAt.addingTimeInterval(TimeInterval(index)),
+          source: "self-test",
+          path: "/tmp/FrostMI/\(index).txt",
+          message: "Bounded event \(index).")
+      }
+      let boundedGraphs = try boundedStore.append(boundedEvents)
+      let retainedEvents = try boundedStore.loadEvents(sessionId: "bounded-session")
+      guard retainedEvents.count == 3,
+        boundedGraphs.first?.nodeCount == 2,
+        boundedGraphs.first?.edgeCount == 1
+      else {
+        print("Runtime event store self-test failed: retention or graph node limit was not enforced.")
+        return 1
+      }
+
+      let prioritizedStore = try RuntimeEventStore(
+        url: temporaryDatabaseURL(label: "prioritized"),
+        retention: .init(
+          maxStoredEvents: 20,
+          maxGraphNodesPerSession: 20,
+          maxFileEvents: 2,
+          maxNetworkEvents: 2,
+          maxProcessObservations: 1))
+      let noisyEvents = (0..<4).map { index in
+        RuntimeEventRecord(
+          sessionId: "noisy-session",
+          kind: .fileEvent,
+          timestamp: startedAt.addingTimeInterval(TimeInterval(index)),
+          source: "self-test",
+          path: "/tmp/FrostMI/noisy-\(index).txt",
+          message: "Noisy file event \(index).")
+      }
+      _ = try prioritizedStore.append(noisyEvents)
+      let prioritizedEvents = try prioritizedStore.loadEvents(sessionId: "noisy-session")
+      guard prioritizedEvents.count == 2 else {
+        print("Runtime event store self-test failed: noisy file-event quota was not enforced.")
+        return 1
+      }
+
+      let legacyDatabase = try FrostDatabase(url: temporaryDatabaseURL(label: "legacy-file-events"))
+      let legacyStore = RuntimeEventStore(
+        database: legacyDatabase,
+        retention: .init(
+          maxStoredEvents: 20,
+          maxGraphNodesPerSession: 20,
+          maxFileEvents: 2,
+          maxNetworkEvents: 2,
+          maxProcessObservations: 1))
+      let legacyEvents = (0..<4).map { index in
+        RuntimeEventRecord(
+          sessionId: "legacy-fsevents-20250701",
+          kind: .fileEvent,
+          timestamp: startedAt.addingTimeInterval(TimeInterval(index)),
+          source: "macos-fsevents",
+          path: "/tmp/FrostMI/legacy-\(index).txt",
+          message: "Legacy file event \(index).")
+      }
+      for event in legacyEvents {
+        try legacyDatabase.upsert(
+          event, kind: .runtimeEvent, key: event.id.uuidString, updatedAt: event.timestamp)
+      }
+      _ = try legacyStore.append(
+        RuntimeEventRecord(
+          sessionId: "legacy-maintenance",
+          kind: .processObservation,
+          timestamp: startedAt.addingTimeInterval(10),
+          source: "self-test",
+          message: "Trigger legacy retention cleanup."))
+      let retainedLegacyEvents = try legacyStore.loadEvents()
+      guard retainedLegacyEvents.filter({ $0.kind == .fileEvent }).count == 2 else {
+        print("Runtime event store self-test failed: legacy UUID-keyed file events were not pruned.")
+        return 1
+      }
+
+      let snapshotStore = try RuntimeEventStore(url: temporaryDatabaseURL(label: "snapshots"))
+      let firstSnapshot = RuntimeEventRecord(
+        sessionId: "network-snapshot-20250701",
+        kind: .networkEvent,
+        timestamp: startedAt,
+        source: "macos-lsof-network-flow",
+        processId: 9001,
+        url: "tcp://127.0.0.1:11434",
+        message: "First real network snapshot.",
+        correlationKey: "9001|ollama|127.0.0.1:11434")
+      let latestSnapshot = RuntimeEventRecord(
+        sessionId: firstSnapshot.sessionId,
+        kind: .networkEvent,
+        timestamp: startedAt.addingTimeInterval(30),
+        source: firstSnapshot.source,
+        processId: firstSnapshot.processId,
+        url: firstSnapshot.url,
+        message: "Latest real network snapshot.",
+        correlationKey: firstSnapshot.correlationKey)
+      _ = try snapshotStore.append(firstSnapshot)
+      _ = try snapshotStore.append(latestSnapshot)
+      let coalescedSnapshots = try snapshotStore.loadEvents(sessionId: firstSnapshot.sessionId)
+      guard coalescedSnapshots.count == 1,
+        coalescedSnapshots.first?.message == latestSnapshot.message
+      else {
+        print("Runtime event store self-test failed: network snapshots were not coalesced.")
+        return 1
+      }
+
+      let fileEventStore = try RuntimeEventStore(url: temporaryDatabaseURL(label: "file-events"))
+      let firstFileEvent = RuntimeEventRecord(
+        sessionId: "fsevents-20250701",
+        kind: .fileEvent,
+        timestamp: startedAt,
+        source: "macos-fsevents",
+        path: "/tmp/FrostMI/AGENTS.md",
+        message: "First file observation.",
+        correlationKey: "1")
+      let latestFileEvent = RuntimeEventRecord(
+        sessionId: firstFileEvent.sessionId,
+        kind: .fileEvent,
+        timestamp: startedAt.addingTimeInterval(45),
+        source: firstFileEvent.source,
+        path: firstFileEvent.path,
+        message: "Latest file observation.",
+        correlationKey: "2")
+      _ = try fileEventStore.append(firstFileEvent)
+      _ = try fileEventStore.append(latestFileEvent)
+      let coalescedFileEvents = try fileEventStore.loadEvents(sessionId: firstFileEvent.sessionId)
+      guard coalescedFileEvents.count == 1,
+        coalescedFileEvents.first?.message == latestFileEvent.message
+      else {
+        print("Runtime event store self-test failed: repeated FSEvents paths were not coalesced.")
+        return 1
+      }
       print(
-        "Runtime event store self-test passed: events=\(reloadedEvents.count) graphs=\(graphs.count) graphEdges=\(graph.edgeCount)"
+        "Runtime event store self-test passed: events=\(reloadedEvents.count) graphs=\(graphs.count) graphEdges=\(graph.edgeCount) retained=\(retainedEvents.count) fileQuota=\(prioritizedEvents.count) legacyFileQuota=\(retainedLegacyEvents.filter { $0.kind == .fileEvent }.count) coalescedNetwork=\(coalescedSnapshots.count) coalescedFiles=\(coalescedFileEvents.count)"
       )
       return 0
     } catch {

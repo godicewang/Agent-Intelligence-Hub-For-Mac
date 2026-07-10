@@ -58,8 +58,10 @@ struct AgentScanView: View {
   @State private var permissionPage = 0
   @State private var runtimeProcessPage = 0
   @State private var runtimeEventPage = 0
+  @State private var runtimeSessionPage = 0
   @State private var runningAgentPage = 0
   @State private var inactiveAgentPage = 0
+  @State private var selectedRuntimeSessionID: String?
 
   private let pageSize = 10
 
@@ -497,12 +499,14 @@ struct AgentScanView: View {
           .id(AgentScanSection.runtimeProcesses)
         runtimeEventsSection
           .id(AgentScanSection.runtimeEvents)
+        runtimeSessionGraphsSection
       }
     } detail: {
       VStack(alignment: .leading, spacing: 18) {
         runtimeSensorStatusSection
           .id(AgentScanSection.runtimeSensors)
         runtimeAttributionSection
+        runtimeSessionDetailSection
       }
     }
   }
@@ -564,7 +568,7 @@ struct AgentScanView: View {
             runtimeSignalTile(
               title: "最近事件",
               value: "\(runtimeEvents.count)",
-              detail: "已降噪保留",
+              detail: "本地降噪保留",
               tone: .neutral
             )
           }
@@ -646,19 +650,61 @@ struct AgentScanView: View {
       if runtimeEvents.isEmpty {
         EmptyStateView(
           title: "暂无运行时事件",
-          message: "尚未记录进程快照、FSEvents 或权限状态变化。",
+          message: "尚未记录进程快照、文件变化、网络快照或 MCP Runtime 事件。",
           systemImage: "list.bullet.rectangle", compact: true)
       } else {
         tableSurface {
           tableHeader(["时间", "类型", "说明"])
           ForEach(visibleEvents) { event in
-            row([
-              event.createdAt.formatted(date: .omitted, time: .standard),
-              event.kind.rawValue,
-              event.message,
-            ])
+            runtimeEventRow(event)
           }
           paginationFooter(total: runtimeEvents.count, page: $runtimeEventPage, label: "Event")
+        }
+      }
+    }
+  }
+
+  private func runtimeEventRow(_ event: RuntimeEventRecord) -> some View {
+    let columns = [
+      event.timestamp.formatted(date: .omitted, time: .standard),
+      runtimeEventTitle(event.kind),
+      event.message ?? event.path ?? event.url ?? "已记录本机运行时观察。",
+    ]
+    if let path = event.path, !path.isEmpty {
+      return AnyView(
+        clickableRow(columns, help: "打开事件关联路径") {
+          viewModel.openPath(path)
+        })
+    }
+    return AnyView(row(columns))
+  }
+
+  private var runtimeSessionGraphsSection: some View {
+    let visibleGraphs = pageItems(viewModel.runtimeSessionGraphs, page: runtimeSessionPage)
+
+    return FrostCard("Session Graphs", subtitle: "由真实 runtime event store 重建的可审计会话链") {
+      if viewModel.runtimeSessionGraphs.isEmpty {
+        EmptyStateView(
+          title: "暂无可重建会话",
+          message: "运行时事件写入后，这里会显示按会话整理的观察节点和顺序边。",
+          systemImage: "point.3.connected.trianglepath.dotted", compact: true)
+      } else {
+        tableSurface {
+          tableHeader(["会话", "Agent", "节点", "更新时间"])
+          ForEach(visibleGraphs) { graph in
+            clickableRow(
+              [
+                graph.sessionId,
+                graph.agentNames.isEmpty ? "本机观察" : graph.agentNames.joined(separator: ", "),
+                "\(graph.nodeCount) / \(graph.edgeCount)",
+                graph.updatedAt.formatted(date: .omitted, time: .standard),
+              ], help: "查看会话观察链"
+            ) {
+              selectedRuntimeSessionID = graph.sessionId
+            }
+          }
+          paginationFooter(
+            total: viewModel.runtimeSessionGraphs.count, page: $runtimeSessionPage, label: "Session")
         }
       }
     }
@@ -675,11 +721,11 @@ struct AgentScanView: View {
             label: viewModel.configuration.enableFSEventsWatcher ? "FSEvents On" : "FSEvents Off",
             tone: viewModel.configuration.enableFSEventsWatcher ? .info : .neutral)
           StatusBadge(
-            label: viewModel.configuration.enableEndpointSecurityMonitor ? "ES On" : "ES Off",
-            tone: viewModel.configuration.enableEndpointSecurityMonitor ? .warning : .neutral)
+            label: endpointSecurityBadgeLabel,
+            tone: endpointSecurityBadgeTone)
           StatusBadge(
-            label: viewModel.configuration.enableNetworkMonitor ? "Network On" : "Network Off",
-            tone: viewModel.configuration.enableNetworkMonitor ? .warning : .neutral)
+            label: viewModel.configuration.enableNetworkMonitor ? "网络快照 On" : "网络快照 Off",
+            tone: viewModel.configuration.enableNetworkMonitor ? .info : .neutral)
         }
 
         Divider()
@@ -740,6 +786,48 @@ struct AgentScanView: View {
           title: "未选择 Agent",
           message: "在 Static Scan 或 Agent Analysis 中选择 Agent 后，可查看运行时归因。",
           systemImage: "scope", compact: true)
+      }
+    }
+  }
+
+  private var runtimeSessionDetailSection: some View {
+    FrostCard("Session Detail", subtitle: "选中会话的最近可观察节点") {
+      if let graph = selectedRuntimeSessionGraph {
+        VStack(alignment: .leading, spacing: 10) {
+          detailRow("Session", graph.sessionId)
+          detailRow("Agents", graph.agentNames.isEmpty ? "本机观察" : graph.agentNames.joined(separator: ", "))
+          detailRow("Observed", "\(graph.nodeCount) nodes · \(graph.edgeCount) edges")
+          detailRow(
+            "Window",
+            "\(graph.startedAt.formatted(date: .abbreviated, time: .shortened)) - \(graph.endedAt.formatted(date: .omitted, time: .shortened))")
+
+          Divider()
+
+          ForEach(graph.nodes.suffix(6)) { node in
+            VStack(alignment: .leading, spacing: 3) {
+              Text(runtimeEventTitle(node.kind))
+                .font(.system(size: 10.5, weight: .bold))
+                .foregroundStyle(FrostTheme.accent)
+              Text(node.message ?? node.title)
+                .font(.system(size: 10.5))
+                .foregroundStyle(FrostTheme.mutedText)
+                .lineLimit(2)
+              Text(node.timestamp.formatted(date: .omitted, time: .standard))
+                .font(.system(size: 9.5, design: .monospaced))
+                .foregroundStyle(FrostTheme.mutedText)
+            }
+            .padding(8)
+            .background(
+              RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(FrostTheme.tableRowBackground)
+            )
+          }
+        }
+      } else {
+        EmptyStateView(
+          title: "未选择运行时会话",
+          message: "在左侧 Session Graphs 中选择一条会话，查看已记录的节点与顺序关系。",
+          systemImage: "point.3.connected.trianglepath.dotted", compact: true)
       }
     }
   }
@@ -1054,7 +1142,7 @@ struct AgentScanView: View {
     viewModel.runtimeProcesses
   }
 
-  private var runtimeEvents: [DiscoveryEvent] {
+  private var runtimeEvents: [RuntimeEventRecord] {
     viewModel.runtimeEvents
   }
 
@@ -1379,11 +1467,11 @@ struct AgentScanView: View {
               ? "App Data On" : "App Data Off",
             tone: viewModel.configuration.enableUserApplicationSupportScan ? .warning : .neutral)
           StatusBadge(
-            label: viewModel.configuration.enableEndpointSecurityMonitor ? "ES On" : "ES Off",
-            tone: viewModel.configuration.enableEndpointSecurityMonitor ? .warning : .neutral)
+            label: endpointSecurityBadgeLabel,
+            tone: endpointSecurityBadgeTone)
           StatusBadge(
-            label: viewModel.configuration.enableNetworkMonitor ? "Network On" : "Network Off",
-            tone: viewModel.configuration.enableNetworkMonitor ? .warning : .neutral)
+            label: viewModel.configuration.enableNetworkMonitor ? "网络快照 On" : "网络快照 Off",
+            tone: viewModel.configuration.enableNetworkMonitor ? .info : .neutral)
         }
 
         Divider()
@@ -1466,6 +1554,59 @@ struct AgentScanView: View {
             .lineLimit(3)
         }
       }
+    }
+  }
+
+  private var selectedRuntimeSessionGraph: RuntimeSessionGraph? {
+    if let selectedRuntimeSessionID,
+      let graph = viewModel.runtimeSessionGraphs.first(where: { $0.sessionId == selectedRuntimeSessionID })
+    {
+      return graph
+    }
+    return viewModel.runtimeSessionGraphs.first
+  }
+
+  private var endpointSecurityBadgeLabel: String {
+    guard viewModel.configuration.enableEndpointSecurityMonitor else {
+      return "ES 未配置"
+    }
+    return "ES 检测中"
+  }
+
+  private var endpointSecurityBadgeTone: StatusBadgeTone {
+    viewModel.configuration.enableEndpointSecurityMonitor ? .warning : .neutral
+  }
+
+  private func runtimeEventTitle(_ kind: RuntimeEventKind) -> String {
+    switch kind {
+    case .processObservation:
+      "进程快照"
+    case .llmRequest:
+      "LLM 请求"
+    case .llmResponse:
+      "LLM 响应"
+    case .mcpToolList:
+      "MCP 工具列表"
+    case .mcpToolCall:
+      "MCP 工具调用"
+    case .mcpToolResult:
+      "MCP 调用结果"
+    case .mcpError:
+      "MCP 错误"
+    case .toolCall:
+      "工具调用"
+    case .toolResult:
+      "工具结果"
+    case .commandExec:
+      "命令执行"
+    case .fileEvent:
+      "文件变化"
+    case .networkEvent:
+      "网络快照"
+    case .memoryWrite:
+      "Memory 写入"
+    case .permissionState:
+      "权限状态"
     }
   }
 

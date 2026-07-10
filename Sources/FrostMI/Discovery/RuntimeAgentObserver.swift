@@ -6,6 +6,7 @@ final class RuntimeAgentObserver: @unchecked Sendable {
     qos: .utility
   )
   private static let fileSystemBatchWindow: TimeInterval = 1.2
+  private static let networkEvidenceInterval: TimeInterval = 300
 
   private let keywordScanner: KeywordFileScanner
   private let processInspector: ProcessInspector
@@ -14,8 +15,10 @@ final class RuntimeAgentObserver: @unchecked Sendable {
   private let store: AssetGraphStore
   private let config: DiscoveryConfiguration
   private let pendingPathLock = NSLock()
+  private let networkObservationLock = NSLock()
   private var pendingChangedPaths: [String: FSEventsChange] = [:]
   private var isFileSystemBatchScheduled = false
+  private var lastNetworkEvidenceAt: [String: Date] = [:]
 
   init(
     keywordScanner: KeywordFileScanner,
@@ -43,7 +46,6 @@ final class RuntimeAgentObserver: @unchecked Sendable {
     if config.enableFSEventsWatcher && !runtimeWatchRoots().isEmpty {
       states.append(startFileSystemWatcher(onUpdate: onUpdate))
     }
-    refreshProcesses(onUpdate: onUpdate)
     return states
   }
 
@@ -216,6 +218,7 @@ final class RuntimeAgentObserver: @unchecked Sendable {
     do {
       var result = processInspector.inspectRunningProcesses()
       var runtimeEvents: [RuntimeEventRecord] = []
+      runtimeEvents.append(runtimeProcessSnapshotEvent(for: result))
       if config.enableNetworkMonitor {
         result.permissionStates.append(networkFlowMonitor.flowSnapshotState())
         result.permissionStates.append(networkFlowMonitor.permissionState())
@@ -243,7 +246,8 @@ final class RuntimeAgentObserver: @unchecked Sendable {
     guard !processIds.isEmpty else { return (DiscoveryScanResult(), []) }
     let flows = networkFlowMonitor.captureEstablishedTCPFlows(
       forProcessIds: processIds,
-      limit: 96
+      limit: 96,
+      timeout: 1.5
     )
     guard !flows.isEmpty else { return (DiscoveryScanResult(), []) }
 
@@ -253,6 +257,7 @@ final class RuntimeAgentObserver: @unchecked Sendable {
     var result = DiscoveryScanResult()
     var runtimeEvents: [RuntimeEventRecord] = []
     for flow in flows {
+      guard shouldRecordNetworkObservation(for: flow) else { continue }
       let runtimeProcess = processesByPID[flow.pid]
       let agent = runtimeProcess?.sourceAgentId.flatMap { agentsById[$0] }
       let provider = networkFlowMonitor.knownProviderName(for: flow.remoteAddress)
@@ -290,7 +295,7 @@ final class RuntimeAgentObserver: @unchecked Sendable {
           url: flow.urlString,
           provider: provider,
           message: summary,
-          correlationKey: "\(flow.pid)|\(flow.remoteEndpoint)",
+          correlationKey: "\(flow.pid)|\(flow.processName)|\(flow.remoteEndpoint)",
           metadata: [
             "captureMode": "lsof",
             "protocol": flow.protocolName,
@@ -303,6 +308,35 @@ final class RuntimeAgentObserver: @unchecked Sendable {
         ))
     }
     return (result, runtimeEvents)
+  }
+
+  private func runtimeProcessSnapshotEvent(for result: DiscoveryScanResult) -> RuntimeEventRecord {
+    let observedAt = Date()
+    return RuntimeEventRecord(
+      sessionId: RuntimeEventRecord.localSessionId(prefix: "process-snapshot", timestamp: observedAt),
+      kind: .processObservation,
+      timestamp: observedAt,
+      source: "macos-process-snapshot",
+      message: "Observed \(result.runtimeProcesses.count) agent-like runtime processes across \(result.agents.count) Agent candidates.",
+      correlationKey: "agent-process-snapshot",
+      metadata: [
+        "runtimeProcessCount": String(result.runtimeProcesses.count),
+        "agentCount": String(result.agents.count),
+      ]
+    )
+  }
+
+  private func shouldRecordNetworkObservation(for flow: NetworkFlowSnapshot) -> Bool {
+    let key = "\(flow.pid)|\(flow.processName)|\(flow.remoteEndpoint)"
+    networkObservationLock.lock()
+    defer { networkObservationLock.unlock() }
+    let cutoff = flow.observedAt.addingTimeInterval(-Self.networkEvidenceInterval)
+    lastNetworkEvidenceAt = lastNetworkEvidenceAt.filter { $0.value >= cutoff }
+    if let previous = lastNetworkEvidenceAt[key], previous >= cutoff {
+      return false
+    }
+    lastNetworkEvidenceAt[key] = flow.observedAt
+    return true
   }
 
   func stop() {
