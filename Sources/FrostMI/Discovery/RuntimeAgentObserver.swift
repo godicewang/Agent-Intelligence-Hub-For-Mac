@@ -9,6 +9,8 @@ final class RuntimeAgentObserver: @unchecked Sendable {
 
   private let keywordScanner: KeywordFileScanner
   private let processInspector: ProcessInspector
+  private let endpointSecurityMonitor: EndpointSecurityMonitor
+  private let networkFlowMonitor: NetworkFlowMonitor
   private let store: AssetGraphStore
   private let config: DiscoveryConfiguration
   private let pendingPathLock = NSLock()
@@ -18,11 +20,15 @@ final class RuntimeAgentObserver: @unchecked Sendable {
   init(
     keywordScanner: KeywordFileScanner,
     processInspector: ProcessInspector,
+    endpointSecurityMonitor: EndpointSecurityMonitor,
+    networkFlowMonitor: NetworkFlowMonitor,
     store: AssetGraphStore,
     config: DiscoveryConfiguration
   ) {
     self.keywordScanner = keywordScanner
     self.processInspector = processInspector
+    self.endpointSecurityMonitor = endpointSecurityMonitor
+    self.networkFlowMonitor = networkFlowMonitor
     self.store = store
     self.config = config
   }
@@ -208,10 +214,95 @@ final class RuntimeAgentObserver: @unchecked Sendable {
 
   func refreshProcessesSnapshot() -> DiscoverySnapshot? {
     do {
-      return try store.replaceRuntimeObservation(processInspector.inspectRunningProcesses())
+      var result = processInspector.inspectRunningProcesses()
+      var runtimeEvents: [RuntimeEventRecord] = []
+      if config.enableNetworkMonitor {
+        result.permissionStates.append(networkFlowMonitor.flowSnapshotState())
+        result.permissionStates.append(networkFlowMonitor.permissionState())
+        let network = networkFlowResult(for: result)
+        result.merge(network.result)
+        runtimeEvents.append(contentsOf: network.runtimeEvents)
+      }
+      if config.enableEndpointSecurityMonitor {
+        result.permissionStates.append(endpointSecurityMonitor.start())
+      }
+      let snapshot = try store.replaceRuntimeObservation(result)
+      if !runtimeEvents.isEmpty {
+        _ = try store.appendRuntimeEvents(runtimeEvents)
+      }
+      return snapshot
     } catch {
       return nil
     }
+  }
+
+  private func networkFlowResult(
+    for processResult: DiscoveryScanResult
+  ) -> (result: DiscoveryScanResult, runtimeEvents: [RuntimeEventRecord]) {
+    let processIds = Set(processResult.runtimeProcesses.map(\.pid))
+    guard !processIds.isEmpty else { return (DiscoveryScanResult(), []) }
+    let flows = networkFlowMonitor.captureEstablishedTCPFlows(
+      forProcessIds: processIds,
+      limit: 96
+    )
+    guard !flows.isEmpty else { return (DiscoveryScanResult(), []) }
+
+    let processesByPID = Dictionary(
+      uniqueKeysWithValues: processResult.runtimeProcesses.map { ($0.pid, $0) })
+    let agentsById = Dictionary(uniqueKeysWithValues: processResult.agents.map { ($0.id, $0) })
+    var result = DiscoveryScanResult()
+    var runtimeEvents: [RuntimeEventRecord] = []
+    for flow in flows {
+      let runtimeProcess = processesByPID[flow.pid]
+      let agent = runtimeProcess?.sourceAgentId.flatMap { agentsById[$0] }
+      let provider = networkFlowMonitor.knownProviderName(for: flow.remoteAddress)
+      let summary =
+        "Real network flow observed: \(flow.processName) -> \(flow.remoteEndpoint)"
+      result.evidence.append(
+        DiscoveryEvidence(
+          assetId: agent?.id,
+          evidenceType: .behavior,
+          source: flow.source,
+          processId: flow.pid,
+          confidenceDelta: provider == nil ? 15 : 25,
+          summary: summary,
+          observedAt: flow.observedAt,
+          rawKey: flow.remoteEndpoint
+        ))
+      result.events.append(
+        DiscoveryEvent(
+          id: UUID(),
+          kind: .networkFlow,
+          path: nil,
+          message: summary,
+          createdAt: flow.observedAt
+        ))
+      runtimeEvents.append(
+        RuntimeEventRecord(
+          sessionId: RuntimeEventRecord.localSessionId(
+            prefix: "network-flow", timestamp: flow.observedAt),
+          agentId: agent?.id,
+          agentName: agent?.normalizedName,
+          kind: .networkEvent,
+          timestamp: flow.observedAt,
+          source: flow.source,
+          processId: flow.pid,
+          url: flow.urlString,
+          provider: provider,
+          message: summary,
+          correlationKey: "\(flow.pid)|\(flow.remoteEndpoint)",
+          metadata: [
+            "captureMode": "lsof",
+            "protocol": flow.protocolName,
+            "localEndpoint": flow.localEndpoint,
+            "remoteEndpoint": flow.remoteEndpoint,
+            "remoteAddress": flow.remoteAddress,
+            "remotePort": flow.remotePort.map(String.init) ?? "",
+            "state": flow.state,
+          ]
+        ))
+    }
+    return (result, runtimeEvents)
   }
 
   func stop() {

@@ -228,7 +228,8 @@ final class AgentScanViewModel: ObservableObject {
     }
     runtimeEvents = snapshot.events
       .filter {
-        [.processObservation, .fileSystemChange, .permissionState, .storage].contains($0.kind)
+        [.processObservation, .fileSystemChange, .networkFlow, .permissionState, .storage]
+          .contains($0.kind)
       }
       .sorted { $0.createdAt > $1.createdAt }
   }

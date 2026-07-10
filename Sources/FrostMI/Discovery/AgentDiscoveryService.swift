@@ -48,6 +48,8 @@ final class AgentDiscoveryService: ObservableObject {
     runtimeObserver = RuntimeAgentObserver(
       keywordScanner: keywordScanner,
       processInspector: processInspector,
+      endpointSecurityMonitor: EndpointSecurityMonitor(),
+      networkFlowMonitor: NetworkFlowMonitor(),
       store: actualStore,
       config: configuration
     )

@@ -50,7 +50,7 @@ enum DiscoverySelfTest {
         }
         && !config.enableFSEventsWatcher
         && !config.enableEndpointSecurityMonitor
-        && !config.enableNetworkMonitor
+        && config.enableNetworkMonitor
         && !config.enableUserApplicationSupportScan
         && config.allowsAutomaticAccess(to: knownAgentSettings)
         && config.allowsAutomaticAccess(to: knownCodexSupport)
@@ -597,6 +597,79 @@ enum DiscoverySelfTest {
         }
         && result.runtimeProcesses.contains {
           $0.pid == 4244 && $0.sourceAgentId != nil && !$0.parentChain.isEmpty
+        }
+    }
+
+    check("Process inspector attributes ChatGPT embedded Codex runtime to app", failures: &failures) {
+      let root = try temporaryDirectory(named: "ChatGPTEmbeddedCodex")
+      let config = DiscoveryConfiguration(
+        homeDirectory: root,
+        projectRoot: root,
+        scanRoots: [],
+        limits: .lightweightDefault,
+        enableColdStartScan: true,
+        enableRuntimeObserver: false,
+        enableFSEventsWatcher: false,
+        enableEndpointSecurityMonitor: false,
+        enableNetworkMonitor: true,
+        enableUserApplicationSupportScan: false
+      )
+      let result = try ProcessInspector(
+        behaviorEngine: BehaviorFingerprintEngine(), config: config, registry: .bundled()
+      ).inspect(
+        observations: [
+          ProcessObservation(
+            pid: 5250,
+            ppid: 1,
+            command: "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT",
+            arguments: "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT"),
+          ProcessObservation(
+            pid: 5251,
+            ppid: 5250,
+            command:
+              "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/150.0.7871.101/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+            arguments:
+              "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/150.0.7871.101/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service) --type=utility --utility-sub-type=network.mojom.NetworkService"
+          ),
+          ProcessObservation(
+            pid: 5252,
+            ppid: 5250,
+            command: "/Applications/Ch",
+            arguments:
+              "/Applications/ChatGPT.app/Contents/Resources/codex -c features.code_mode_host=true app-server --analytics-default-enabled"
+          ),
+          ProcessObservation(
+            pid: 5253,
+            ppid: 5252,
+            command: "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl",
+            arguments: "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"),
+          ProcessObservation(
+            pid: 5254,
+            ppid: 5250,
+            command:
+              "/Users/fixture/.codex/computer-use/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService",
+            arguments:
+              "/Users/fixture/.codex/computer-use/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService"
+          ),
+        ])
+      let codexRuntimePids = Set(
+        result.runtimeProcesses
+          .filter { runtime in
+            guard let sourceAgentId = runtime.sourceAgentId else { return false }
+            return result.agents.contains {
+              $0.id == sourceAgentId && $0.normalizedName == "codex-app"
+            }
+          }
+          .map(\.pid)
+      )
+      return [5250, 5251, 5252, 5253, 5254].allSatisfy { pid in
+        codexRuntimePids.contains(pid)
+          || result.agents.contains {
+            $0.normalizedName == "codex-app" && $0.processIds.contains(pid)
+          }
+      }
+        && !result.agents.contains {
+          $0.normalizedName == "codex-cli" && $0.processIds.contains(5252)
         }
     }
 

@@ -155,6 +155,17 @@ enum RuntimeSensingBench {
     }
 
     var result = processInspector.inspect(observations: processRows)
+    if !processRows.isEmpty {
+      result.events.append(
+        DiscoveryEvent(
+          id: DiscoveryEvent.runtimeProcessSnapshotId,
+          kind: .processObservation,
+          path: nil,
+          message:
+            "Runtime bench process snapshot inspected \(processRows.count) process observations and matched \(result.runtimeProcesses.count) agent-like runtime processes.",
+          createdAt: events.map(\.timestampDate).min() ?? Date()
+        ))
+    }
     for event in events where event.kind != .process {
       merge(event: event, into: &result, context: context)
     }
@@ -291,14 +302,18 @@ enum RuntimeSensingBench {
           rawKey: event.sessionId
         ))
     case .networkEvent:
+      let isRealFlow = event.source == "macos-lsof-network-flow"
+        || event.source == "network-extension-flow"
       result.evidence.append(
         DiscoveryEvidence(
           assetId: agentId,
           evidenceType: .behavior,
           source: event.source ?? "runtime-bench",
           processId: event.pid,
-          confidenceDelta: 20,
-          summary: "Network destination observed: \(event.url ?? "unknown")",
+          confidenceDelta: isRealFlow ? 30 : 20,
+          summary: isRealFlow
+            ? "Real network flow observed: \(event.url ?? "unknown")"
+            : "Network destination observed: \(event.url ?? "unknown")",
           observedAt: eventDate,
           rawKey: event.sessionId
         ))
@@ -690,8 +705,10 @@ private struct RuntimeBenchAssessment {
       hasAttackGoalSeparation
     case "degraded_mode_explanation":
       hasDegradedModeExplanation
-    case "network_extension_flow_detail", "real_network_flow_capture":
-      hasRealNetworkFlowDetail
+    case "real_network_flow_capture":
+      hasRealNetworkFlowCapture
+    case "network_extension_flow_detail":
+      hasNetworkExtensionFlowDetail
     case "endpoint_security_auth_events":
       hasEndpointSecurityAuthEvents
     default:
@@ -793,16 +810,28 @@ private struct RuntimeBenchAssessment {
     return hasAvailableFallback && hasMissingRuntimeEntitlement
   }
 
-  private var hasRealNetworkFlowDetail: Bool {
+  private var hasRealNetworkFlowCapture: Bool {
+    events.contains {
+      $0.kind == .networkEvent
+        && $0.url != nil
+        && ($0.source == "macos-lsof-network-flow" || $0.source == "network-extension-flow")
+    }
+  }
+
+  private var hasNetworkExtensionFlowDetail: Bool {
     snapshot.permissionStates.contains {
       $0.capability == .networkExtension && $0.status == .available
-    } && events.contains { $0.kind == .networkEvent && $0.url != nil }
+    } && events.contains {
+      $0.kind == .networkEvent && $0.url != nil && $0.source == "network-extension-flow"
+    }
   }
 
   private var hasEndpointSecurityAuthEvents: Bool {
     snapshot.permissionStates.contains {
       $0.capability == .endpointSecurity && $0.status == .available
-    } && events.contains { [.process, .fileEvent].contains($0.kind) }
+    } && events.contains {
+      [.process, .fileEvent].contains($0.kind) && $0.source == "endpoint-security-auth"
+    }
   }
 
   private func hasOrderedKinds(
@@ -1027,6 +1056,8 @@ private struct RuntimeBenchEvent: Decodable {
     switch kind {
     case .fileEvent:
       .fileSystemChange
+    case .networkEvent:
+      .networkFlow
     case .permissionState:
       .permissionState
     default:

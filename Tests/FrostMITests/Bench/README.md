@@ -67,7 +67,7 @@ The dynamic runtime bench is intentionally smaller, but stricter per fixture. It
 - evidence and runtime process links back to an Agent,
 - open capability gaps that should guide the next implementation cycle.
 
-This means the runtime bench now checks both coverage and precision: "did FrostMI see the runtime behavior", "did it persist the observable event stream", "did it rebuild ordered session edges", and "did it attribute that behavior to the right Agent without inventing extra assets." A passing runtime fixture does not mean the runtime module is complete; `openCapabilityGaps` intentionally lists unimplemented target capabilities such as policy verdict UX, real Endpoint Security auth events, real Network Extension flow capture, and degraded-mode explanation.
+This means the runtime bench now checks both coverage and precision: "did FrostMI see the runtime behavior", "did it persist the observable event stream", "did it rebuild ordered session edges", and "did it attribute that behavior to the right Agent without inventing extra assets." A passing runtime fixture does not mean the runtime module is complete; `openCapabilityGaps` intentionally lists unimplemented target capabilities such as real Endpoint Security auth events and Network Extension flow detail.
 
 ## Runtime Sensing Commands
 
@@ -92,18 +92,21 @@ swift run FrostMI --runtime-event-store-self-test
 swift run FrostMI --mcp-wrapper-self-test
 swift run FrostMI --fsevents-self-test
 swift run FrostMI --codex-runtime-capture-self-test
+swift run FrostMI --network-flow-self-test
+swift run FrostMI --endpoint-security-self-test
 ```
 
 - `--runtime-event-store-self-test` validates SQLite runtime event persistence and session graph edge reconstruction.
 - `--mcp-wrapper-self-test` launches a real local MCP stdio wrapper around a fixture JSON-RPC server, forwards stdin/stdout unchanged, and validates captured `tools/list`, `tools/call`, and result events.
 - `--fsevents-self-test` starts a real macOS FSEvents stream in root-filter mode and validates delivery from FrostMI's application-support path into the runtime store.
-- `--codex-runtime-capture-self-test` uses the currently running Codex.app process tree as live ground truth and validates attribution for main, helper, service, renderer, app-server, node_repl, and computer-use processes. Run it on machines where Codex.app is active.
+- `--codex-runtime-capture-self-test` uses the currently running Codex process tree as live ground truth and validates attribution for main, helper, service, renderer, app-server, node_repl, and computer-use processes. It supports standalone `Codex.app` and `ChatGPT.app`-embedded Codex runtimes.
+- `--network-flow-self-test` runs the real lightweight `lsof` TCP flow adapter and validates parsing against visible local established connections.
+- `--endpoint-security-self-test` validates Endpoint Security entitlement/framework status. Missing entitlement is a valid development-build result; it is not treated as ES auth-event capture.
 
-Current target mode is expected to keep entitlement-gated gaps open until FrostMI has real Endpoint Security and Network Extension capture:
+Current target mode is expected to keep entitlement-gated gaps open until FrostMI has real Endpoint Security auth-event and Network Extension detail capture:
 
 - `endpoint_security_auth_events`
 - `network_extension_flow_detail`
-- `real_network_flow_capture`
 
 Current dynamic baselines:
 

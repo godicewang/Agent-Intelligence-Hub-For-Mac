@@ -61,6 +61,7 @@ final class ColdStartScanner: @unchecked Sendable {
       result.permissionStates.append(endpointSecurityMonitor.permissionState())
     }
     if config.enableNetworkMonitor {
+      result.permissionStates.append(networkFlowMonitor.flowSnapshotState())
       result.permissionStates.append(networkFlowMonitor.permissionState())
     }
     let timedOut = isExpired(deadline)

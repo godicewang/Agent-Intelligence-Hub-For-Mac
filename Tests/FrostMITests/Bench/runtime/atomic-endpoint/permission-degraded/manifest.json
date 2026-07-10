@@ -85,7 +85,7 @@
         "agent": "gemini-cli",
         "type": "behavior",
         "processId": 8101,
-        "summaryContains": "Network destination observed"
+        "summaryContains": "Real network flow observed"
       }
     ],
     "requireLinkedEvidence": true,
@@ -96,7 +96,7 @@
       },
       {
         "capability": "real_network_flow_capture",
-        "reason": "Network destination evidence is fixture-level until Network Extension capture is implemented."
+        "reason": "Resolved by the lightweight macOS lsof network-flow adapter; Network Extension detail is tracked separately."
       }
     ]
   }

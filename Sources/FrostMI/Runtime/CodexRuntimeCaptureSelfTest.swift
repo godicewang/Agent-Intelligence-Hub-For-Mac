@@ -69,10 +69,14 @@ enum CodexRuntimeCaptureSelfTest {
 
   private static func expectedCodexRows(from rows: [ProcessObservation]) -> [ProcessObservation] {
     let rowsByParent = Dictionary(grouping: rows, by: \.ppid)
-    let rootPids = rows.filter { row in
+    let standaloneRootPids = rows.filter { row in
       row.arguments.contains("/Applications/Codex.app/Contents/MacOS/Codex")
         || row.arguments == "/Applications/Codex.app/Contents/MacOS/Codex"
     }.map(\.pid)
+    let embeddedRootPids = rows.filter { row in
+      isChatGPTMainProcess(row) && hasEmbeddedCodexDescendant(row.pid, rowsByParent: rowsByParent)
+    }.map(\.pid)
+    let rootPids = standaloneRootPids + embeddedRootPids
     var descendants: Set<Int32> = Set(rootPids)
     var queue = rootPids
     while let pid = queue.first {
@@ -86,11 +90,49 @@ enum CodexRuntimeCaptureSelfTest {
     return rows.filter { row in
       let text = "\(row.command) \(row.arguments)"
       let isCodexBundleProcess = text.contains("/Applications/Codex.app/")
+      let isEmbeddedCodexBundleProcess = isEmbeddedCodexProcess(row)
+      let isEmbeddedChatGPTRoot = embeddedRootPids.contains(row.pid)
       let isCodexComputerUse =
         text.contains("/.codex/computer-use/")
         || text.contains("Codex Computer Use.app")
-      return isCodexBundleProcess || (isCodexComputerUse && descendants.contains(row.ppid))
+      return isCodexBundleProcess
+        || isEmbeddedCodexBundleProcess
+        || isEmbeddedChatGPTRoot
+        || (isCodexComputerUse && descendants.contains(row.ppid))
     }.sorted { $0.pid < $1.pid }
+  }
+
+  private static func hasEmbeddedCodexDescendant(
+    _ pid: Int32,
+    rowsByParent: [Int32: [ProcessObservation]]
+  ) -> Bool {
+    var queue = [pid]
+    var seen: Set<Int32> = [pid]
+    while let current = queue.first {
+      queue.removeFirst()
+      for child in rowsByParent[current] ?? [] where !seen.contains(child.pid) {
+        if isEmbeddedCodexProcess(child) {
+          return true
+        }
+        seen.insert(child.pid)
+        queue.append(child.pid)
+      }
+    }
+    return false
+  }
+
+  private static func isEmbeddedCodexProcess(_ row: ProcessObservation) -> Bool {
+    let text = "\(row.command) \(row.arguments)"
+    return text.contains("/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/")
+      || text.contains("/Applications/ChatGPT.app/Contents/Resources/codex")
+      || text.contains("/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl")
+      || text.contains("/.codex/computer-use/")
+      || text.contains("Codex Computer Use.app")
+  }
+
+  private static func isChatGPTMainProcess(_ row: ProcessObservation) -> Bool {
+    let text = "\(row.command) \(row.arguments)"
+    return text.contains("/Applications/ChatGPT.app/Contents/MacOS/ChatGPT")
   }
 
   private static func componentSummary(rows: [ProcessObservation]) -> String {
@@ -110,8 +152,10 @@ enum CodexRuntimeCaptureSelfTest {
     if text.contains("Computer Use") || text.contains("SkyComputerUse") {
       return "computer-use"
     }
+    if text.contains("/Applications/ChatGPT.app/Contents/MacOS/ChatGPT") { return "chatgpt-main" }
     if text.contains("/Applications/Codex.app/Contents/MacOS/Codex") { return "main" }
     if text.contains("/Applications/Codex.app/") { return "bundle-helper" }
+    if text.contains("/Applications/ChatGPT.app/") { return "embedded-bundle-helper" }
     return URL(fileURLWithPath: row.command).lastPathComponent
   }
 }

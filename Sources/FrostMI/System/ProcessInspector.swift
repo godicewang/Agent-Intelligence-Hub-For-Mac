@@ -283,6 +283,11 @@ final class ProcessInspector {
     fingerprint: AgentFingerprint,
     rowsByPID: [Int32: ProcessObservation]
   ) -> ProcessInstallScope {
+    if fingerprint.normalizedName == "codex-app",
+      let embeddedScope = embeddedCodexInstallScope(for: row, rowsByPID: rowsByPID)
+    {
+      return embeddedScope
+    }
     if processBelongsToInstallPath(row, fingerprint: fingerprint) {
       return .direct
     }
@@ -297,6 +302,57 @@ final class ProcessInspector {
       currentParent = parent.ppid
     }
     return .none
+  }
+
+  private func embeddedCodexInstallScope(
+    for row: ProcessObservation,
+    rowsByPID: [Int32: ProcessObservation]
+  ) -> ProcessInstallScope? {
+    if isEmbeddedCodexProcess(row) {
+      return .direct
+    }
+    if isChatGPTMainProcess(row),
+      rowsByPID.values.contains(where: {
+        $0.ppid == row.pid && isEmbeddedCodexProcess($0)
+      })
+    {
+      return .direct
+    }
+
+    var currentParent = row.ppid
+    var seen: Set<Int32> = [row.pid]
+    while currentParent > 0, !seen.contains(currentParent), seen.count < 16 {
+      seen.insert(currentParent)
+      guard let parent = rowsByPID[currentParent] else { break }
+      if isEmbeddedCodexProcess(parent) {
+        return .ancestor
+      }
+      if isChatGPTMainProcess(parent),
+        rowsByPID.values.contains(where: {
+          $0.ppid == parent.pid && isEmbeddedCodexProcess($0)
+        })
+      {
+        return .ancestor
+      }
+      currentParent = parent.ppid
+    }
+    return nil
+  }
+
+  private func isEmbeddedCodexProcess(_ row: ProcessObservation) -> Bool {
+    let text = "\(row.command) \(row.arguments) \(row.bundlePath ?? "")"
+    return text.contains("/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/")
+      || text.contains("/Applications/ChatGPT.app/Contents/Resources/codex")
+      || text.contains("/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl")
+      || text.contains("/.codex/computer-use/")
+      || text.contains("Codex Computer Use.app")
+  }
+
+  private func isChatGPTMainProcess(_ row: ProcessObservation) -> Bool {
+    let text = "\(row.command) \(row.arguments) \(row.bundlePath ?? "")"
+    return text.contains("/Applications/ChatGPT.app/Contents/MacOS/ChatGPT")
+      || text.contains("/Applications/ChatGPT.app")
+        && (row.bundleIdentifier == "com.openai.chat" || row.localizedName == "ChatGPT")
   }
 
   private func preferredProcessMatches(_ matches: [ProcessMatch]) -> [ProcessMatch] {

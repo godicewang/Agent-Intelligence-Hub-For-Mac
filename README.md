@@ -32,7 +32,7 @@ FrostMI 当前界面只保留 **Agent Sensing** 一个主模块。它围绕 Mac 
 | 界面区域 | 当前作用 |
 | --- | --- |
 | Static Scan | 真实静态发现，发现 Claude Code、Cursor、Codex CLI、Gemini CLI、MCP、Skills、Context 和 Memory。 |
-| Runtime Monitor | 真实动态监控，使用进程快照、NSWorkspace 运行 App 视图、FSEvents、runtime event store 和权限状态，不伪造 Endpoint Security / Network Extension 遥测。 |
+| Runtime Monitor | 真实动态监控，使用进程快照、NSWorkspace 运行 App 视图、FSEvents、轻量本机网络流快照、runtime event store 和权限状态，不伪造 Endpoint Security / Network Extension 遥测。 |
 | Agent Analysis | Agent 级聚合画像，整合静态资产、运行时进程、证据覆盖、风险和置信度。 |
 | Runtime Foundation | SQLite runtime event store、session graph 重建和 MCP stdio wrapper CLI，为后续工具调用审计、策略和回滚提供证据底座。 |
 
@@ -40,12 +40,12 @@ FrostMI 当前界面只保留 **Agent Sensing** 一个主模块。它围绕 Mac 
 
 ## English Interface Tour
 
-The current FrostMI interface exposes **Agent Sensing** as the only primary module. It is centered on endpoint-native sensing for local AI agents on macOS and now opens on **Agent Analysis**, with **Runtime Monitor** and **Static Scan** as drill-down tabs. Agent Analysis includes a **Static Profile Rebuild** refresh button and a **Runtime Observation** switch, then separates running and inactive agents into stacked sections sorted by recent observation and activity signals. Runtime Monitor uses a lightweight live dashboard for running-process snapshots, NSWorkspace running-app attribution, FSEvents status, and permission states without fabricating Endpoint Security or Network Extension telemetry. Static Scan discovers local Agents, MCP servers, Skills, Context files, and Memory assets. Codex CLI and Codex App are detected as separate local agent surfaces so the desktop UI is not collapsed into the CLI fingerprint.
+The current FrostMI interface exposes **Agent Sensing** as the only primary module. It is centered on endpoint-native sensing for local AI agents on macOS and now opens on **Agent Analysis**, with **Runtime Monitor** and **Static Scan** as drill-down tabs. Agent Analysis includes a **Static Profile Rebuild** refresh button and a **Runtime Observation** switch, then separates running and inactive agents into stacked sections sorted by recent observation and activity signals. Runtime Monitor uses a lightweight live dashboard for running-process snapshots, NSWorkspace running-app attribution, FSEvents status, local network-flow snapshots, and permission states without fabricating Endpoint Security or Network Extension telemetry. Static Scan discovers local Agents, MCP servers, Skills, Context files, and Memory assets. Codex CLI and Codex App are detected as separate local agent surfaces so the desktop UI is not collapsed into the CLI fingerprint; the live Codex check supports both standalone `Codex.app` and the current `ChatGPT.app`-embedded Codex runtime.
 
 | Area | Current Role |
 | --- | --- |
 | Static Scan | Real static discovery for Claude Code, Cursor, Codex CLI, Gemini CLI, MCP, Skills, Context, and Memory. |
-| Runtime Monitor | Real lightweight runtime monitoring using process snapshots, NSWorkspace running apps, FSEvents status, runtime event storage, and permission states. |
+| Runtime Monitor | Real lightweight runtime monitoring using process snapshots, NSWorkspace running apps, FSEvents status, local network-flow snapshots, runtime event storage, and permission states. |
 | Agent Analysis | Agent-level rollup that joins static assets, runtime processes, evidence coverage, risk, and confidence. |
 | Runtime Foundation | SQLite runtime event store, session graph reconstruction, and an MCP stdio wrapper CLI for future tool-call audit, policy, and rollback. |
 
@@ -161,9 +161,11 @@ swift run FrostMI --runtime-event-store-self-test
 swift run FrostMI --mcp-wrapper-self-test
 swift run FrostMI --fsevents-self-test
 swift run FrostMI --codex-runtime-capture-self-test
+swift run FrostMI --network-flow-self-test
+swift run FrostMI --endpoint-security-self-test
 ```
 
-`--fsevents-self-test` is strict by default and validates real macOS FSEvents delivery through FrostMI's root-filter mode. `--codex-runtime-capture-self-test` uses the currently running Codex.app process tree as a live ground-truth sample and fails if any detected Codex main/helper/service/renderer/app-server/node_repl/computer-use process is not attributed to `codex-app`.
+`--fsevents-self-test` is strict by default and validates real macOS FSEvents delivery through FrostMI's root-filter mode. `--codex-runtime-capture-self-test` uses the currently running Codex process tree as a live ground-truth sample and supports both standalone `Codex.app` and `ChatGPT.app`-embedded Codex runtime helpers. `--network-flow-self-test` validates the lightweight `lsof` network-flow adapter against visible local TCP connections. `--endpoint-security-self-test` validates real entitlement/framework status without pretending that a development build has ES auth-event telemetry.
 
 For target-mode evaluation that fails until known runtime gaps are implemented:
 
@@ -171,7 +173,7 @@ For target-mode evaluation that fails until known runtime gaps are implemented:
 Scripts/run_runtime_sensing_bench.sh --target
 ```
 
-Target mode resolves gap status from event order, taint flow, policy verdicts, cross-agent sessions, permission states, and linked runtime evidence. Remaining open target gaps should correspond to capabilities that are genuinely not implemented yet, such as Endpoint Security auth events or real Network Extension flow details.
+Target mode resolves gap status from event order, taint flow, policy verdicts, cross-agent sessions, permission states, linked runtime evidence, and real lightweight network-flow evidence. Remaining open target gaps should correspond to entitlement-gated capabilities that are genuinely not implemented in the current development build: Endpoint Security auth events and Network Extension flow details.
 
 Large external datasets are kept under git-ignored `datasets/`.
 
@@ -226,6 +228,6 @@ The following capabilities are product directions and are not exposed as current
 
 ## Status
 
-FrostMI is an early-stage macOS endpoint intelligence project. The current app intentionally exposes only the real Agent Sensing foundation: static discovery, lightweight runtime monitoring, Agent-level analysis, runtime event storage, session graph reconstruction, and MCP stdio capture foundation. Prompt Copilot, Memory/Profile, Assistant, Model Router, full Endpoint Security integration, Network Extension enforcement, Local LLM Proxy, and user-facing MCP policy UX remain product directions, but they are not presented as active UI modules yet.
+FrostMI is an early-stage macOS endpoint intelligence project. The current app intentionally exposes only the real Agent Sensing foundation: static discovery, lightweight runtime monitoring, Agent-level analysis, local network-flow snapshots, runtime event storage, session graph reconstruction, and MCP stdio capture foundation. Prompt Copilot, Memory/Profile, Assistant, Model Router, full Endpoint Security auth-event integration, Network Extension enforcement/detail, Local LLM Proxy, and user-facing MCP policy UX remain product directions, but they are not presented as active UI modules yet.
 
 If this direction is useful to you, please Star the repository so more Mac AI, agent intelligence, and endpoint security builders can find it.

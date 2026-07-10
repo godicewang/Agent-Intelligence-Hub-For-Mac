@@ -37,7 +37,7 @@ struct DiscoveryConfiguration: Codable, Hashable {
       enableRuntimeObserver: true,
       enableFSEventsWatcher: !roots.isEmpty,
       enableEndpointSecurityMonitor: false,
-      enableNetworkMonitor: false,
+      enableNetworkMonitor: true,
       enableUserApplicationSupportScan: false
     )
   }

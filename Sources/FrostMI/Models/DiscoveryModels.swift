@@ -207,6 +207,7 @@ struct DiscoveryEvent: Identifiable, Codable, Hashable {
 enum DiscoveryEventKind: String, Codable, CaseIterable, Hashable {
   case coldStartScan
   case fileSystemChange
+  case networkFlow
   case processObservation
   case permissionState
   case storage
@@ -224,6 +225,7 @@ enum DiscoveryCapability: String, Codable, CaseIterable, Hashable {
   case fullDiskAccess
   case endpointSecurity
   case networkExtension
+  case networkFlowSnapshot
   case fileSystemEvents
 }
 
